@@ -1,0 +1,13 @@
+[
+  "category",
+  "deadline_hours",
+  "time_pressure",
+  "task_duration",
+  "time_of_day",
+  "day_of_week",
+  "urgency",
+  "importance_score",
+  "severity",
+  "cognitive_load",
+  "energy_level"
+]

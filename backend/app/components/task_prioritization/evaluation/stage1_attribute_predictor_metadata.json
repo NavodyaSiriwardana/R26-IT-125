@@ -1,0 +1,27 @@
+{
+  "model_type": "TF-IDF + multi-target Ridge regression",
+  "selected_alpha": 0.1,
+  "random_state": 42,
+  "input_fields": [
+    "title",
+    "description",
+    "category",
+    "task_duration"
+  ],
+  "pipeline_fields": [
+    "combined_text",
+    "category",
+    "task_duration"
+  ],
+  "target_fields": [
+    "cognitive_load",
+    "energy_level"
+  ],
+  "category_note": "Category is stored as a string and must use the same coding as training.",
+  "energy_definition": "Energy required by the task, not the student's current energy.",
+  "split_strategy": "GroupShuffleSplit by title; titles are disjoint across train/validation/test.",
+  "training_rows": 4742,
+  "test_rows": 1258,
+  "training_unique_titles": 564,
+  "test_unique_titles": 141
+}

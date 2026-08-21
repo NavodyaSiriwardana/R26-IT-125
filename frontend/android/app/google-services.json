@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "765224709282",
+    "project_id": "intelligent-diary-r26-125",
+    "storage_bucket": "intelligent-diary-r26-125.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:765224709282:android:63aeddd53efb8221ca7bfb",
+        "android_client_info": {
+          "package_name": "com.example.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMborNrerB7OF_KsacweZ4YmjrxiQcsic"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:765224709282:android:1155fcc07c6983caca7bfb",
+        "android_client_info": {
+          "package_name": "com.r26.intelligentdiary"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMborNrerB7OF_KsacweZ4YmjrxiQcsic"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
