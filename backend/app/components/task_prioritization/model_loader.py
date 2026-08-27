@@ -38,16 +38,19 @@ REQUIRED_FILES = [
 
 
 def _calculate_sha256(file_path: Path) -> str:
-    digest = hashlib.sha256()
+    """
+    Calculate a cross-platform SHA-256 hash.
 
-    with file_path.open("rb") as file:
-        for block in iter(
-            lambda: file.read(1024 * 1024),
-            b"",
-        ):
-            digest.update(block)
+    Git may check out text JSON files using CRLF on Windows
+    and LF on Linux/macOS. Normalize JSON line endings so
+    equivalent artifacts produce the same verified hash.
+    """
+    content = file_path.read_bytes()
 
-    return digest.hexdigest()
+    if file_path.suffix.lower() == ".json":
+        content = content.replace(b"\r\n", b"\n")
+
+    return hashlib.sha256(content).hexdigest()
 
 
 def _load_json(file_path: Path):
