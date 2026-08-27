@@ -1,443 +1,803 @@
-import pandas as pd
 import math
+from typing import Any
+
 import numpy as np
+import pandas as pd
 import shap
-from .model_loader import model, feature_names
 
-from .urgency_calculator import calculate_temporal_urgency
-
-explainer = shap.Explainer(model)
-
-# ── Developer debugging ──────────────────────────────────────────────────────
-# True  = print ranking inputs/scores to backend terminal
-# False = production mode, no ranking debug output
-DEBUG_RANKING = True
-
-# ── Feature label maps — used for tag WORDING based on actual value ──────────
-# Each feature has 3 levels: high / moderate / low
-FEATURE_LABELS = {
-    "urgency": {
-        "high":     "High urgency",
-        "moderate": "Moderate urgency",
-        "low":      "Low urgency",
-    },
-    "importance_score": {
-        "high":     "High importance",
-        "moderate": "Moderate importance",
-        "low":      "Low importance",
-    },
-    "severity": {
-        "high":     "High severity",
-        "moderate": "Moderate severity",
-        "low":      "Low severity",
-    },
-    "cognitive_load": {
-        "high":     "Requires significant effort",
-        "moderate": "Moderate workload",
-        "low":      "Low effort task",
-    },
-    "energy_level": {
-        "high":     "High energy demand",
-        "moderate": "Moderate energy required",
-        "low":      "Low energy required",
-    },
-    "deadline_hours": {
-        "high":     "Deadline is far",       # high hours = far deadline = negative for priority
-        "moderate": "Approaching deadline",
-        "low":      "Close deadline",         # low hours = close deadline = positive for priority
-    },
-    "time_pressure": {
-        "high":     "Plenty of time available",   # high ratio = lots of time = negative
-        "moderate": "Moderate time pressure",
-        "low":      "High time pressure",          # low ratio = tight = positive
-    },
-    "task_duration": {
-        "high":     "Long task duration",
-        "moderate": "Moderate task duration",
-        "low":      "Short task",
-    },
-}
+from .model_loader import (
+    calibrate_raw_scores,
+    feature_names,
+    model,
+    priority_config,
+)
+from .urgency_calculator import (
+    calculate_temporal_urgency,
+)
 
 
+# False for normal production use.
+DEBUG_RANKING = False
 
-# ── Number of SHAP-ranked feature tags to show per task ──────────────────────
-# Was 3 — bumped to 4 to surface secondary influential features (e.g.
-# cognitive_load, time_pressure) more often, without touching the SHAP
-# ranking logic itself. This is still 100% faithful to true SHAP magnitude —
-# we're just widening the cutoff, not injecting or reordering anything.
-TOP_N_TAGS = 5
-
-# Derived from development-set predictions produced by the
-# XGBoost 3.2.0 Stage 2 training notebook.
-SCORE_CENTER = 0.03685249201953411
-SCORE_SCALE = 1.0446737801327481
+MAX_REASON_TAGS = 2
 
 CATEGORY_MAP = {
-    "academic":        0,
-    "health":          1,
-    "personal":        2,
-    "finance":         3,
-    "social":          4,
+    "academic": 0,
+    "health": 1,
+    "personal": 2,
+    "finance": 3,
+    "social": 4,
     "extracurricular": 5,
 }
 
+EXPLANATION_GROUPS = {
+    "timing": [
+        "deadline_hours",
+        "time_pressure",
+        "urgency",
+    ],
+    "student_judgement": [
+        "importance_score",
+        "severity",
+    ],
+    "effort": [
+        "cognitive_load",
+        "energy_level",
+        "task_duration",
+    ],
+    "availability_context": [
+        "time_of_day",
+    ],
+}
 
-def normalize_score(score: float) -> float:
-    z = (score - SCORE_CENTER) / SCORE_SCALE
-    normalized = 1.0 / (1.0 + math.exp(-z))
-    return round(normalized * 100, 1)
-
-
-
-def get_priority(normalized: float) -> str:
-    if normalized >= 85:
-        return "Critical"
-    if normalized >= 70:
-        return "High"
-    if normalized >= 50:
-        return "Medium"
-    return "Low"
-
-def _value_level(feature: str, value: float) -> str:
-    """
-    Return 'high', 'moderate', or 'low' for a feature based on its actual value.
-    Thresholds: >= 0.65 → high, >= 0.35 → moderate, < 0.35 → low
-    For inverted features (deadline_hours, time_pressure) we use absolute value
-    but the LABEL meanings are already flipped in FEATURE_LABELS.
-    """
-    if feature == "deadline_hours":
-        # Normalize deadline_hours: < 12h = low (close), 12-72h = moderate, > 72h = high (far)
-        if value < 12:   return "low"
-        if value < 72:   return "moderate"
-        return "high"
-    if feature == "time_pressure":
-        # time_pressure = deadline_hours / task_hours
-        # Low ratio = tight pressure, high ratio = plenty of time
-        if value < 3:    return "low"
-        if value < 10:   return "moderate"
-        return "high"
-    if feature == "task_duration":
-        # task_duration is code 1-5
-        if value >= 4:   return "high"
-        if value >= 2:   return "moderate"
-        return "low"
-    # All other features are 0-1 scale
-    if value >= 0.65:  return "high"
-    if value >= 0.35:  return "moderate"
-    return "low"
+explainer = shap.TreeExplainer(model)
 
 
-def generate_reason_tags(
-    shap_vals,
-    feature_names,
-    feature_values,
-    normalized_score
-):
-    """
-    Generate reason tags using SHAP contribution strength.
+def _safe_float(
+    value: Any,
+    default: float,
+) -> float:
+    try:
+        converted = float(value)
+    except (TypeError, ValueError):
+        converted = default
 
-    SHAP determines which features influenced the prediction.
-    Actual feature values determine whether the wording is
-    high, moderate, or low.
-    """
+    if not math.isfinite(converted):
+        return default
 
-    feature_contrib = list(zip(feature_names, shap_vals))
+    return converted
 
-    # Most influential feature first.
-    sorted_by_impact = sorted(
-        feature_contrib,
-        key=lambda x: abs(x[1]),
-        reverse=True
+
+def _clamp(
+    value: Any,
+    minimum: float,
+    maximum: float,
+    default: float,
+) -> float:
+    converted = _safe_float(
+        value,
+        default,
     )
 
-    tags = []
+    return max(
+        minimum,
+        min(maximum, converted),
+    )
 
-    # Use exactly the same thresholds as get_priority().
-    if normalized_score >= 85:
-        # Critical: show features that positively increased priority.
-        for feature, shap_value in sorted_by_impact:
-            if feature not in FEATURE_LABELS:
-                continue
 
-            if shap_value <= 0.01:
-                continue
+def clamp01(value: Any) -> float:
+    return _clamp(
+        value=value,
+        minimum=0.0,
+        maximum=1.0,
+        default=0.5,
+    )
 
-            value = feature_values.get(feature, 0.5)
-            level = _value_level(feature, value)
 
-            tags.append(FEATURE_LABELS[feature][level])
+def _category_code(category: Any) -> int:
+    normalized = str(
+        category
+    ).strip().lower()
 
-            if len(tags) >= TOP_N_TAGS:
-                break
+    if normalized in CATEGORY_MAP:
+        return CATEGORY_MAP[normalized]
 
-        if not tags:
-            tags = ["Very high overall priority"]
+    if normalized.isdigit():
+        numeric_code = int(normalized)
 
-        tags.append("Requires immediate attention")
+        if 0 <= numeric_code <= 5:
+            return numeric_code
 
-    elif normalized_score >= 70:
-        # High: primarily show positive contributors.
-        for feature, shap_value in sorted_by_impact:
-            if feature not in FEATURE_LABELS:
-                continue
+    raise ValueError(
+        f"Unsupported task category: {category}"
+    )
 
-            if shap_value <= 0.01:
-                continue
 
-            value = feature_values.get(feature, 0.5)
-            level = _value_level(feature, value)
+def get_priority(
+    normalized_score: float,
+) -> str:
+    """
+    Convert the calibrated relative-priority
+    score into the frozen priority tiers.
+    """
 
-            tags.append(FEATURE_LABELS[feature][level])
+    score = _clamp(
+        normalized_score,
+        0.0,
+        100.0,
+        0.0,
+    )
 
-            if len(tags) >= TOP_N_TAGS:
-                break
+    critical_min = float(
+        priority_config[
+            "tiers"
+        ][
+            "Critical"
+        ][
+            "minimum_inclusive"
+        ]
+    )
 
-        if not tags:
-            tags = ["High overall priority"]
+    high_min = float(
+        priority_config[
+            "tiers"
+        ][
+            "High"
+        ][
+            "minimum_inclusive"
+        ]
+    )
 
-    elif normalized_score >= 50:
-        # Medium: show the strongest overall influences.
-        for feature, shap_value in sorted_by_impact:
-            if feature not in FEATURE_LABELS:
-                continue
+    medium_min = float(
+        priority_config[
+            "tiers"
+        ][
+            "Medium"
+        ][
+            "minimum_inclusive"
+        ]
+    )
 
-            if abs(shap_value) <= 0.01:
-                continue
+    if score >= critical_min:
+        return "Critical"
 
-            value = feature_values.get(feature, 0.5)
-            level = _value_level(feature, value)
+    if score >= high_min:
+        return "High"
 
-            tags.append(FEATURE_LABELS[feature][level])
+    if score >= medium_min:
+        return "Medium"
 
-            if len(tags) >= TOP_N_TAGS:
-                break
+    return "Low"
 
-        if not tags:
-            tags = ["Moderate task priority"]
 
+def _build_contrastive_reason(
+    feature: str,
+    direction: str,
+    feature_value: float,
+    query_median: float,
+) -> str:
+    moved_higher = (
+        direction == "raised"
+    )
+
+    if feature == "deadline_hours":
+        return (
+            "Closer deadline than the other tasks"
+            if moved_higher
+            else "More time remains before its deadline"
+        )
+
+    if feature == "time_pressure":
+        return (
+            "Tighter completion window than the other tasks"
+            if moved_higher
+            else "More scheduling flexibility than the other tasks"
+        )
+
+    if feature == "urgency":
+        return (
+            "Higher calculated urgency than the other tasks"
+            if moved_higher
+            else "Lower calculated urgency than the other tasks"
+        )
+
+    if feature == "importance_score":
+        return (
+            "Higher importance rating than the other tasks"
+            if moved_higher
+            else "Lower importance rating than the other tasks"
+        )
+
+    if feature == "severity":
+        return (
+            "Stronger consequences if delayed"
+            if moved_higher
+            else "Lower consequences if delayed"
+        )
+
+    if feature == "cognitive_load":
+        return (
+            "Mental-effort estimate helped move it higher"
+            if moved_higher
+            else "Mental-effort estimate kept it lower"
+        )
+
+    if feature == "energy_level":
+        return (
+            "Energy requirement helped move it higher"
+            if moved_higher
+            else "Energy requirement kept it lower"
+        )
+
+    if feature == "task_duration":
+        relative_duration = (
+            "shorter"
+            if feature_value
+            < query_median
+            else "longer"
+        )
+
+        return (
+            f"Its {relative_duration} duration "
+            "helped move it higher"
+            if moved_higher
+            else
+            f"Its {relative_duration} duration "
+            "kept it lower"
+        )
+
+    if feature == "time_of_day":
+        relative_time = (
+            "earlier"
+            if feature_value
+            < query_median
+            else "later"
+        )
+
+        return (
+            f"Its {relative_time} availability "
+            "helped move it higher"
+            if moved_higher
+            else
+            f"Its {relative_time} availability "
+            "kept it lower"
+        )
+
+    return (
+        "Overall task context helped move it higher"
+        if moved_higher
+        else "Overall task context kept it lower"
+    )
+
+
+def _generate_contrastive_reasons(
+    row_position: int,
+    predicted_rank: int,
+    dataframe: pd.DataFrame,
+    contrastive_shap: np.ndarray,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """
+    Explain why a task ranked above or below
+    the other tasks in the current request.
+    """
+
+    task_count = len(dataframe)
+
+    upper_group_size = max(
+        1,
+        math.ceil(task_count / 2),
+    )
+
+    desired_direction = (
+        "raised"
+        if predicted_rank
+        <= upper_group_size
+        else "reduced"
+    )
+
+    row = dataframe.iloc[
+        row_position
+    ]
+
+    query_medians = dataframe[
+        feature_names
+    ].median()
+
+    contribution_map = {
+        feature:
+            float(
+                contrastive_shap[
+                    row_position,
+                    feature_index,
+                ]
+            )
+        for feature_index, feature
+        in enumerate(feature_names)
+    }
+
+    grouped_candidates = []
+
+    for (
+        group_name,
+        group_features,
+    ) in EXPLANATION_GROUPS.items():
+        matching_features = []
+
+        for feature in group_features:
+            contribution = (
+                contribution_map[
+                    feature
+                ]
+            )
+
+            if (
+                desired_direction == "raised"
+                and contribution > 1e-8
+            ):
+                matching_features.append(
+                    feature
+                )
+
+            elif (
+                desired_direction == "reduced"
+                and contribution < -1e-8
+            ):
+                matching_features.append(
+                    feature
+                )
+
+        if not matching_features:
+            continue
+
+        strongest_feature = max(
+            matching_features,
+            key=lambda name:
+                abs(
+                    contribution_map[
+                        name
+                    ]
+                ),
+        )
+
+        feature_value = float(
+            row[strongest_feature]
+        )
+
+        contribution = float(
+            contribution_map[
+                strongest_feature
+            ]
+        )
+
+        grouped_candidates.append({
+            "group": group_name,
+            "feature": strongest_feature,
+            "direction": desired_direction,
+            "contribution": contribution,
+            "reason":
+                _build_contrastive_reason(
+                    feature=strongest_feature,
+                    direction=desired_direction,
+                    feature_value=feature_value,
+                    query_median=float(
+                        query_medians[
+                            strongest_feature
+                        ]
+                    ),
+                ),
+        })
+
+    grouped_candidates.sort(
+        key=lambda item:
+            abs(item["contribution"]),
+        reverse=True,
+    )
+
+    selected = grouped_candidates[
+        :MAX_REASON_TAGS
+    ]
+
+    if not selected:
+        selected = [{
+            "group": "overall",
+            "feature": "overall_context",
+            "direction": desired_direction,
+            "contribution": 0.0,
+            "reason": (
+                "Overall task context helped move it higher"
+                if desired_direction == "raised"
+                else "Overall task context kept it lower"
+            ),
+        }]
+
+    reason_tags = [
+        item["reason"]
+        for item in selected
+    ]
+
+    return reason_tags, selected
+
+
+def _build_feature_record(
+    task: dict[str, Any],
+) -> dict[str, float | int]:
+    category = _category_code(
+        task.get(
+            "category",
+            "academic",
+        )
+    )
+
+    deadline_hours = max(
+        _safe_float(
+            task.get(
+                "deadline_hours",
+                24.0,
+            ),
+            24.0,
+        ),
+        0.0,
+    )
+
+    time_pressure = _clamp(
+        value=task.get(
+            "time_pressure",
+            1.0,
+        ),
+        minimum=0.0,
+        maximum=200.0,
+        default=1.0,
+    )
+
+    urgency_source = str(
+        task.get(
+            "urgency_source",
+            "calculated",
+        )
+    ).strip().lower()
+
+    if urgency_source == "user_adjusted":
+        final_urgency = clamp01(
+            task.get(
+                "urgency",
+                0.5,
+            )
+        )
     else:
-        # Low: show features that reduced priority.
-        for feature, shap_value in sorted_by_impact:
-            if feature not in FEATURE_LABELS:
-                continue
+        final_urgency = (
+            calculate_temporal_urgency(
+                deadline_hours=
+                    deadline_hours,
+                time_pressure=
+                    time_pressure,
+            )
+        )
 
-            if shap_value >= -0.01:
-                continue
+    return {
+        "category": category,
 
-            value = feature_values.get(feature, 0.5)
-            level = _value_level(feature, value)
+        "deadline_hours":
+            deadline_hours,
 
-            tags.append(FEATURE_LABELS[feature][level])
+        "time_pressure":
+            time_pressure,
 
-            if len(tags) >= TOP_N_TAGS:
-                break
+        "task_duration": int(
+            _clamp(
+                task.get(
+                    "task_duration",
+                    3,
+                ),
+                1,
+                5,
+                3,
+            )
+        ),
 
-        if not tags:
-            tags = ["Low overall priority"]
+        "time_of_day": int(
+            _clamp(
+                task.get(
+                    "time_of_day",
+                    9,
+                ),
+                0,
+                23,
+                9,
+            )
+        ),
 
-    return tags
+        # Monday=0, ..., Sunday=6.
+        "day_of_week": int(
+            _clamp(
+                task.get(
+                    "day_of_week",
+                    0,
+                ),
+                0,
+                6,
+                0,
+            )
+        ),
+
+        "urgency":
+            clamp01(final_urgency),
+
+        "importance_score":
+            clamp01(
+                task.get(
+                    "importance_score",
+                    0.5,
+                )
+            ),
+
+        "severity":
+            clamp01(
+                task.get(
+                    "severity",
+                    0.5,
+                )
+            ),
+
+        "cognitive_load":
+            clamp01(
+                task.get(
+                    "cognitive_load",
+                    0.5,
+                )
+            ),
+
+        "energy_level":
+            clamp01(
+                task.get(
+                    "energy_level",
+                    0.5,
+                )
+            ),
+    }
 
 
-def clamp01(value):
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return 0.5
-
-    return max(0.0, min(1.0, value))
-
-def rank_tasks(tasks: list) -> list:
+def rank_tasks(
+    tasks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
-    Rank a list of tasks using XGBRanker + SHAP explanations.
+    Rank one current list of student tasks.
 
-    Each task dict must contain:
-      urgency, importance_score, severity, cognitive_load, energy_level,
-      deadline_hours, time_pressure, category (string), task_duration,
-      time_of_day, day_of_week
-
-    Returns the same list sorted by pred_score descending,
-    with normalized_score, priority, and reason_tags added.
+    The calibrated score is a relative-priority
+    score, not a probability.
     """
+
     if not tasks:
         return []
 
-    records = []
+    records = [
+        _build_feature_record(task)
+        for task in tasks
+    ]
 
-    for t in tasks:
-        cat = t.get("category", "academic")
+    dataframe = pd.DataFrame(
+        records,
+        columns=feature_names,
+    )
 
-        cat_id = CATEGORY_MAP.get(
-            str(cat).lower(),
-            int(cat) if str(cat).isdigit() else 0,
+    if dataframe.empty:
+        return []
+
+    if not np.isfinite(
+        dataframe.to_numpy(
+            dtype=float
+        )
+    ).all():
+        raise ValueError(
+            "Stage 2 input contains "
+            "non-finite feature values."
         )
 
-        deadline_hours = max(
-            float(t.get("deadline_hours", 24.0)),
-            0.0,
+    raw_predictions = np.asarray(
+        model.predict(dataframe),
+        dtype=float,
+    )
+
+    if not np.isfinite(
+        raw_predictions
+    ).all():
+        raise ValueError(
+            "Stage 2 produced non-finite "
+            "ranking scores."
         )
 
-        time_pressure = max(
-            float(t.get("time_pressure", 1.0)),
-            0.0,
+    normalized_scores = (
+        calibrate_raw_scores(
+            raw_predictions
+        )
+    )
+
+    predicted_order = np.argsort(
+        -raw_predictions,
+        kind="stable",
+    )
+
+    predicted_ranks = np.empty(
+        len(tasks),
+        dtype=int,
+    )
+
+    predicted_ranks[
+        predicted_order
+    ] = np.arange(
+        1,
+        len(tasks) + 1,
+    )
+
+    shap_values = np.asarray(
+        explainer.shap_values(
+            dataframe,
+            check_additivity=True,
+        ),
+        dtype=float,
+    )
+
+    if shap_values.shape != (
+        len(tasks),
+        len(feature_names),
+    ):
+        raise ValueError(
+            "Unexpected Stage 2 SHAP shape: "
+            f"{shap_values.shape}"
         )
 
-        urgency_source = str(
-            t.get("urgency_source", "calculated")
-        ).lower()
+    # Query-centred contrastive SHAP.
+    contrastive_shap = (
+        shap_values
+        - shap_values.mean(
+            axis=0,
+            keepdims=True,
+        )
+    )
 
-        if urgency_source == "user_adjusted":
-            final_urgency = clamp01(
-                t.get("urgency", 0.5)
+    # Verify contrastive explanation fidelity.
+    actual_deviation = (
+        raw_predictions
+        - raw_predictions.mean()
+    )
+
+    reconstructed_deviation = (
+        contrastive_shap.sum(
+            axis=1
+        )
+    )
+
+    maximum_explanation_error = float(
+        np.max(
+            np.abs(
+                actual_deviation
+                - reconstructed_deviation
             )
-        else:
-            final_urgency = calculate_temporal_urgency(
-                deadline_hours=deadline_hours,
-                time_pressure=time_pressure,
-            )
-
-        records.append({
-            "deadline_hours": deadline_hours,
-            "time_pressure": time_pressure,
-            "urgency": final_urgency,
-            "importance_score": clamp01(
-                t.get("importance_score", 0.5)
-            ),
-            "severity": clamp01(
-                t.get("severity", 0.5)
-            ),
-            "cognitive_load": clamp01(
-                t.get("cognitive_load", 0.5)
-            ),
-            "energy_level": clamp01(
-                t.get("energy_level", 0.5)
-            ),
-            "category": cat_id,
-            "task_duration": int(
-                t.get("task_duration", 3)
-            ),
-            "time_of_day": int(
-                t.get("time_of_day", 9)
-            ),
-            "day_of_week": int(
-                t.get("day_of_week", 0)
-            ),
-        })
-
-    df = pd.DataFrame(records)[feature_names]
-
-    # ── DEBUG: exact features entering XGBRanker ────────────────────────────────
-    if DEBUG_RANKING:
-        print("\n")
-        print("=" * 70)
-        print("              XGBRANKER INPUT")
-        print("=" * 70)
-
-        for i, task in enumerate(tasks):
-
-            print(f"\nTASK {i + 1}")
-
-            print(f"ID:    {task.get('_doc_id', 'N/A')}")
-            print(f"Title: {task.get('title', 'Title not sent')}")
-
-            print("-" * 50)
-
-            for feature in feature_names:
-                print(
-                    f"{feature:<20} = "
-                    f"{df.iloc[i][feature]}"
-                )
-
-            print("-" * 50)
-
-        print("=" * 70)
-
-    # ── XGBRanker prediction ──────────────────────────────────────────────────
-    print("\n========== XGBRANKER INPUT ==========")
-
-    for i, task in enumerate(tasks):
-        print(f"\nTask {i + 1}:")
-        print("ID:", task.get("_doc_id"))
-        print(df.iloc[i].to_dict())
-
-    print("=====================================\n")    
-
-    preds = model.predict(df)
-
-    if DEBUG_RANKING:
-
-        print("\n")
-        print("=" * 70)
-        print("              XGBRANKER RAW PREDICTIONS")
-        print("=" * 70)
-
-        for i, score in enumerate(preds):
-
-            task = tasks[i]
-
-            print(
-                f"Task {i + 1} | "
-                f"ID={task.get('_doc_id', 'N/A')} | "
-                f"Title={task.get('title', 'N/A')} | "
-                f"Raw Score={float(score):.6f}"
-            )
-
-        print("=" * 70)
-
-    for i, score in enumerate(preds):
-        print(
-            f"Task {i + 1} | "
-            f"ID={tasks[i].get('_doc_id')} | "
-            f"Raw XGB score={float(score):.6f}"
         )
+    )
 
-    # ── SHAP explanations ─────────────────────────────────────────────────────
-    shap_values = explainer(df)
+    if maximum_explanation_error > 1e-4:
+        raise ValueError(
+            "Contrastive SHAP additivity "
+            "validation failed: "
+            f"{maximum_explanation_error}"
+        )
 
     results = []
-    for i, task in enumerate(tasks):
-        pred_score  = float(preds[i])
-        normalized  = normalize_score(pred_score)
-        priority    = get_priority(normalized)
 
-        if DEBUG_RANKING:
-            print(
-                f"\nFINAL → "
-                f"{task.get('title', task.get('_doc_id', 'Unknown Task'))}"
-                f" | raw={pred_score:.6f}"
-                f" | normalized={normalized}/100"
-                f" | priority={priority}"
-            )
-
-        # Build feature value dict for this task (for value-based tag wording)
-        feature_values = {fn: float(df.iloc[i][fn]) for fn in feature_names}
-
-        reason_tags = generate_reason_tags(
-            shap_values.values[i],
-            feature_names,
-            feature_values,
-            normalized,
+    for index, task in enumerate(tasks):
+        pred_score = float(
+            raw_predictions[index]
         )
 
-        results.append({
+        normalized_score = round(
+            float(
+                normalized_scores[index]
+            ),
+            1,
+        )
+
+        priority = get_priority(
+            normalized_score
+        )
+
+        predicted_rank = int(
+            predicted_ranks[index]
+        )
+
+        (
+            reason_tags,
+            reason_details,
+        ) = _generate_contrastive_reasons(
+            row_position=index,
+            predicted_rank=predicted_rank,
+            dataframe=dataframe,
+            contrastive_shap=
+                contrastive_shap,
+        )
+
+        result = {
             **task,
 
-            # Return current calculated/user-preserved ranking features.
             "deadline_hours": float(
-                df.iloc[i]["deadline_hours"]
+                dataframe.iloc[
+                    index
+                ][
+                    "deadline_hours"
+                ]
             ),
+
             "time_pressure": float(
-                df.iloc[i]["time_pressure"]
+                dataframe.iloc[
+                    index
+                ][
+                    "time_pressure"
+                ]
             ),
+
             "urgency": float(
-                df.iloc[i]["urgency"]
+                dataframe.iloc[
+                    index
+                ][
+                    "urgency"
+                ]
             ),
 
             "pred_score": pred_score,
-            "normalized_score": normalized,
-            "priority": priority,
-            "reason_tags": reason_tags,
-        })
 
-    # Sort by pred_score descending
-    results.sort(key=lambda x: x["pred_score"], reverse=True)
+            "normalized_score":
+                normalized_score,
+
+            "score_interpretation":
+                "relative_priority_not_probability",
+
+            "priority": priority,
+
+            "rank_position":
+                predicted_rank,
+
+            "reason_tags":
+                reason_tags,
+
+            "reason_details":
+                reason_details,
+        }
+
+        results.append(result)
+
+    results.sort(
+        key=lambda item:
+            item["pred_score"],
+        reverse=True,
+    )
+
+    if DEBUG_RANKING:
+        print(
+            "\nStage 2 ranking result:"
+        )
+
+        for result in results:
+            print({
+                "title":
+                    result.get("title"),
+                "raw_score":
+                    result["pred_score"],
+                "normalized_score":
+                    result[
+                        "normalized_score"
+                    ],
+                "priority":
+                    result["priority"],
+                "rank_position":
+                    result[
+                        "rank_position"
+                    ],
+                "reason_tags":
+                    result["reason_tags"],
+            })
+
+        print(
+            "Maximum contrastive SHAP error:",
+            maximum_explanation_error,
+        )
+
     return results

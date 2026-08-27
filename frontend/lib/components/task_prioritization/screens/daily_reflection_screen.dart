@@ -65,8 +65,30 @@ class _ReflectionData {
 // SCREEN
 // ---------------------------------------------------------------------------
 
-class DailyReflectionScreen extends StatelessWidget {
+class DailyReflectionScreen extends StatefulWidget {
   const DailyReflectionScreen({super.key});
+
+  @override
+  State<DailyReflectionScreen> createState() => _DailyReflectionScreenState();
+}
+
+class _DailyReflectionScreenState extends State<DailyReflectionScreen> {
+  late Future<_ReflectionData> _reflectionFuture;
+
+  bool _showAllCompletedTasks = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _reflectionFuture = _buildReflectionData();
+  }
+
+  void _reloadReflection() {
+    setState(() {
+      _reflectionFuture = _buildReflectionData();
+    });
+  }
 
   String _categoryName(dynamic raw) {
     if (raw == null) return 'Other';
@@ -407,14 +429,20 @@ class DailyReflectionScreen extends StatelessWidget {
   static const _textSecondary = Color(0xFF94A3B8);
 
   // ── Priority colour ──────────────────────────────────────────────────────
-  Color _priorityColor(String p) {
-    switch (p.toLowerCase()) {
+  Color _priorityColor(String priority) {
+    switch (priority.toLowerCase()) {
       case 'critical':
         return _red;
+
       case 'high':
         return _orange;
+
       case 'medium':
         return _blue;
+
+      case 'low':
+        return const Color(0xFF69F0AE);
+
       default:
         return _textSecondary;
     }
@@ -606,7 +634,7 @@ class DailyReflectionScreen extends StatelessWidget {
               ),
             ),
             Text(
-              '${pts.toStringAsFixed(1)} / ${maxPts.toInt()}pts',
+              '${pts.round()} / ${maxPts.toInt()} pts',
               style: TextStyle(
                 fontSize: 12,
                 color: color,
@@ -616,18 +644,162 @@ class DailyReflectionScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: maxPts > 0 ? (pts / maxPts).clamp(0.0, 1.0) : 0,
-            minHeight: 5,
-            backgroundColor: _bg,
-            valueColor: AlwaysStoppedAnimation(color),
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(
+            begin: 0.0,
+            end: maxPts > 0 ? (pts / maxPts).clamp(0.0, 1.0) : 0.0,
           ),
+          duration: const Duration(milliseconds: 1800),
+          curve: Curves.easeInOutCubic,
+          builder: (context, animatedProgress, child) {
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: animatedProgress,
+                minHeight: 6,
+                backgroundColor: _bg,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            );
+          },
         ),
       ],
     ),
   );
+
+  Widget _buildReflectionLoadingState() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(28),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0.92, end: 1.0),
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOutCubic,
+          builder: (context, scale, child) {
+            return Opacity(
+              opacity: scale,
+              child: Transform.scale(scale: scale, child: child),
+            );
+          },
+          child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(maxWidth: 380),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: _accent.withOpacity(0.22)),
+              boxShadow: [
+                BoxShadow(
+                  color: _accent.withOpacity(0.08),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 54,
+                  height: 54,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircularProgressIndicator(color: _accent, strokeWidth: 3),
+                      Icon(
+                        Icons.auto_awesome_rounded,
+                        color: _accent,
+                        size: 21,
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 20),
+                Text(
+                  "Preparing your reflection",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  "Reviewing today's activity and generating practical insights for you.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _textSecondary,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnimatedReflectionScore({
+    required double score,
+    required Color color,
+  }) {
+    final targetScore = score.clamp(0.0, 100.0).toDouble();
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: targetScore),
+      duration: const Duration(milliseconds: 1800),
+      curve: Curves.easeInOutCubic,
+      builder: (context, animatedScore, child) {
+        return SizedBox(
+          width: 112,
+          height: 112,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 112,
+                height: 112,
+                child: CircularProgressIndicator(
+                  value: animatedScore / 100,
+                  strokeWidth: 9,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: color.withOpacity(0.13),
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    animatedScore.round().toString(),
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 31,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    "/100",
+                    style: TextStyle(
+                      color: _textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
@@ -652,12 +824,10 @@ class DailyReflectionScreen extends StatelessWidget {
         iconTheme: const IconThemeData(color: _textPrimary),
       ),
       body: FutureBuilder<_ReflectionData>(
-        future: _buildReflectionData(),
+        future: _reflectionFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: _accent),
-            );
+            return _buildReflectionLoadingState();
           }
           if (snapshot.hasError) {
             return Center(
@@ -698,6 +868,25 @@ class DailyReflectionScreen extends StatelessWidget {
                         height: 1.4,
                       ),
                     ),
+                    const SizedBox(height: 18),
+
+                    ElevatedButton.icon(
+                      onPressed: _reloadReflection,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text("Try Again"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accent,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -715,117 +904,228 @@ class DailyReflectionScreen extends StatelessWidget {
           final double priorityPts = r.priorityPoints;
           final double behaviourPts = r.behaviourPoints;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Date header ──────────────────────────────────────────
-                Text(
-                  dateStr,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: _textSecondary,
-                    letterSpacing: 0.5,
+          return TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 1000),
+            curve: Curves.easeOutCubic,
+            builder: (context, animationValue, child) {
+              return Opacity(
+                opacity: animationValue,
+                child: Transform.translate(
+                  offset: Offset(0, 18 * (1 - animationValue)),
+                  child: child,
+                ),
+              );
+            },
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Date header ──────────────────────────────────────────
+                  Text(
+                    dateStr,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: _textSecondary,
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                // ── Insights ──────────────────────────────────────────
-                _sectionTitle(
-                  title: "Today's Reflection",
-                  icon: Icons.auto_awesome_rounded,
-                ),
+                  // ── Insights ──────────────────────────────────────────
+                  _sectionTitle(
+                    title: "Today's Reflection",
+                    icon: Icons.auto_awesome_rounded,
+                  ),
 
-                _cardBox(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        r.reflectionSummary,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: _textPrimary,
-                          height: 1.5,
-                        ),
-                      ),
-
-                      if (r.reflectionStrengths.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Strengths',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: _green,
+                  _cardBox(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          r.reflectionSummary,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: _textPrimary,
+                            height: 1.5,
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        ...r.reflectionStrengths.map(
-                          (item) => _insightRow(item, color: _green),
-                        ),
-                      ],
 
-                      if (r.reflectionImprovements.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Improvements',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: _orange,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        ...r.reflectionImprovements.map(
-                          (item) => _insightRow(item, color: _orange),
-                        ),
-                      ],
-
-                      const SizedBox(height: 18),
-
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: _accent.withOpacity(0.10),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: _accent.withOpacity(0.25)),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 34,
-                              height: 34,
-                              decoration: BoxDecoration(
-                                color: _accent.withOpacity(0.16),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(
-                                Icons.flag_rounded,
-                                color: _accent,
-                                size: 19,
-                              ),
+                        if (r.reflectionStrengths.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Strengths',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: _green,
                             ),
-                            const SizedBox(width: 11),
+                          ),
+                          const SizedBox(height: 6),
+                          ...r.reflectionStrengths.map(
+                            (item) => _insightRow(item, color: _green),
+                          ),
+                        ],
+
+                        if (r.reflectionImprovements.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'What to improve next',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: _orange,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          ...r.reflectionImprovements.map(
+                            (item) => _insightRow(item, color: _orange),
+                          ),
+                        ],
+
+                        const SizedBox(height: 18),
+
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: _accent.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: _accent.withOpacity(0.25),
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: _accent.withOpacity(0.16),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.flag_rounded,
+                                  color: _accent,
+                                  size: 19,
+                                ),
+                              ),
+                              const SizedBox(width: 11),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      r.actionablePending > 0
+                                          ? "Next Focus"
+                                          : "Tomorrow's Focus",
+                                      style: const TextStyle(
+                                        color: _accent,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      r.tomorrowFocus,
+                                      style: const TextStyle(
+                                        color: _textPrimary,
+                                        fontSize: 13,
+                                        height: 1.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // ── Productivity Score Card ──────────────────────────────
+                  _sectionTitle(
+                    title: "Today's Provisional Score",
+                    icon: Icons.insights_rounded,
+                    color: scoreColor,
+                  ),
+                  _cardBox(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Circular score
+                            _buildAnimatedReflectionScore(
+                              score: r.productivityScore,
+                              color: scoreColor,
+                            ),
+
+                            const SizedBox(width: 18),
+
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    "Tomorrow's Focus",
-                                    style: TextStyle(
-                                      color: _accent,
-                                      fontSize: 13,
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _accent.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: _accent.withOpacity(0.30),
+                                      ),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.pending_actions_rounded,
+                                          size: 13,
+                                          color: _accent,
+                                        ),
+                                        SizedBox(width: 5),
+                                        Text(
+                                          "PROVISIONAL",
+                                          style: TextStyle(
+                                            color: _accent,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 0.4,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 10),
+
+                                  Text(
+                                    r.productivityScore >= 80
+                                        ? "Excellent consistency"
+                                        : r.productivityScore >= 50
+                                        ? "Good progress"
+                                        : "More progress needed",
+                                    style: const TextStyle(
+                                      color: _textPrimary,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    r.tomorrowFocus,
-                                    style: const TextStyle(
-                                      color: _textPrimary,
-                                      fontSize: 13,
-                                      height: 1.5,
+
+                                  const SizedBox(height: 6),
+
+                                  const Text(
+                                    "This live score may change as you complete or update tasks throughout the day.",
+                                    style: TextStyle(
+                                      color: _textSecondary,
+                                      fontSize: 11,
+                                      height: 1.4,
                                     ),
                                   ),
                                 ],
@@ -833,200 +1133,258 @@ class DailyReflectionScreen extends StatelessWidget {
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                ),
 
-                // ── Productivity Score Card ──────────────────────────────
-                _sectionTitle(
-                  title: "Today's Provisional Score",
-                  icon: Icons.insights_rounded,
-                  color: scoreColor,
-                ),
-                _cardBox(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${r.productivityScore.toStringAsFixed(1)}/100',
-                              style: TextStyle(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w900,
-                                color: scoreColor,
+                        const SizedBox(height: 18),
+
+                        Container(
+                          height: 1,
+                          color: Colors.white.withOpacity(0.06),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Compact activity metrics
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _statChip(
+                                "Done",
+                                "${r.completed}",
+                                _green,
                               ),
                             ),
+                            Expanded(
+                              child: _statChip(
+                                "Actionable",
+                                "${r.actionablePending}",
+                                _orange,
+                              ),
+                            ),
+                            Expanded(
+                              child: _statChip(
+                                "Upcoming",
+                                "${r.upcoming}",
+                                Colors.cyanAccent,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _statChip(
+                                "Snoozed",
+                                "${r.snoozed}",
+                                _blue,
+                              ),
+                            ),
+                            Expanded(
+                              child: _statChip(
+                                "Postponed",
+                                "${r.postponed}",
+                                _red,
+                              ),
+                            ),
+                            const Expanded(child: SizedBox()),
+                          ],
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // Expandable score explanation
+                        Theme(
+                          data: Theme.of(context).copyWith(
+                            dividerColor: Colors.transparent,
+                            splashColor: Colors.transparent,
+                            highlightColor: Colors.transparent,
                           ),
-
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _accent.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: _accent.withOpacity(0.30),
-                              ),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
+                          child: ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            childrenPadding: const EdgeInsets.only(bottom: 4),
+                            initiallyExpanded: false,
+                            maintainState: false,
+                            iconColor: _accent,
+                            collapsedIconColor: _textSecondary,
+                            title: const Row(
                               children: [
                                 Icon(
-                                  Icons.pending_actions_rounded,
-                                  size: 14,
+                                  Icons.calculate_outlined,
                                   color: _accent,
+                                  size: 18,
                                 ),
-                                SizedBox(width: 5),
+                                SizedBox(width: 8),
                                 Text(
-                                  "PROVISIONAL",
+                                  "How this score was calculated",
                                   style: TextStyle(
-                                    color: _accent,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.4,
+                                    color: _textPrimary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
                             ),
+                            children: [
+                              _scoreBreakdownRow(
+                                "Completion Rate (40%)",
+                                completionPts,
+                                40,
+                                _green,
+                              ),
+                              _scoreBreakdownRow(
+                                "Priority Adherence (35%)",
+                                priorityPts,
+                                35,
+                                _accent,
+                              ),
+                              _scoreBreakdownRow(
+                                "Plan Consistency (25%)",
+                                behaviourPts.clamp(0.0, 25.0),
+                                25,
+                                _orange,
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 6),
-
-                      const Text(
-                        "A live summary of today's progress. It may change as remaining tasks become actionable.",
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: _textSecondary,
-                          height: 1.4,
                         ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // ── Stat row ─────────────────────────────────────────
-                      Wrap(
-                        spacing: 24,
-                        runSpacing: 14,
-                        alignment: WrapAlignment.spaceAround,
-                        children: [
-                          _statChip('Done', '${r.completed}', _green),
-                          _statChip(
-                            'Actionable',
-                            '${r.actionablePending}',
-                            _orange,
-                          ),
-                          _statChip(
-                            'Upcoming',
-                            '${r.upcoming}',
-                            Colors.cyanAccent,
-                          ),
-                          _statChip('Snoozed', '${r.snoozed}', _blue),
-                          _statChip('Postponed', '${r.postponed}', _red),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      // ── Score breakdown ───────────────────────────────────
-                      const Text(
-                        'How your score was calculated',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _scoreBreakdownRow(
-                        'Completion Rate (40%)',
-                        completionPts,
-                        40,
-                        _green,
-                      ),
-                      _scoreBreakdownRow(
-                        'Priority Adherence (35%)',
-                        priorityPts,
-                        35,
-                        _accent,
-                      ),
-                      _scoreBreakdownRow(
-                        'Plan Consistency (25%)',
-                        behaviourPts.clamp(0.0, 25.0),
-                        25,
-                        _orange,
-                      ),
-                    ],
-                  ),
-                ),
-
-                // ── Category Breakdown ───────────────────────────────────
-                _sectionTitle(
-                  title: "Activity Breakdown",
-                  icon: Icons.category_rounded,
-                ),
-
-                _cardBox(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (r.completedByCategory.isEmpty &&
-                          r.actionableByCategory.isEmpty &&
-                          r.upcomingByCategory.isEmpty)
-                        const Text(
-                          'No tasks recorded today.',
-                          style: TextStyle(color: _textSecondary),
-                        ),
-
-                      ...r.completedByCategory.entries.map(
-                        (e) => _categoryRow(
-                          '${e.key} — Completed',
-                          e.value,
-                          _green,
-                        ),
-                      ),
-
-                      ...r.actionableByCategory.entries.map(
-                        (e) => _categoryRow(
-                          '${e.key} — Actionable',
-                          e.value,
-                          _orange,
-                        ),
-                      ),
-
-                      ...r.upcomingByCategory.entries.map(
-                        (e) => _categoryRow(
-                          '${e.key} — Upcoming',
-                          e.value,
-                          Colors.cyanAccent,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // ── Completed Tasks ──────────────────────────────────────
-                if (r.completedTasks.isNotEmpty) ...[
-                  _sectionTitle(
-                    title: "Completed Tasks",
-                    icon: Icons.task_alt_rounded,
-                    color: _green,
-                  ),
-                  _cardBox(
-                    Column(
-                      children: r.completedTasks
-                          .map((t) => _taskRow(t))
-                          .toList(),
+                      ],
                     ),
                   ),
-                ],
 
-                const SizedBox(height: 24),
-              ],
+                  // ── Category Breakdown ───────────────────────────────────
+                  _sectionTitle(
+                    title: "Activity Breakdown",
+                    icon: Icons.category_rounded,
+                  ),
+
+                  _cardBox(
+                    Theme(
+                      data: Theme.of(context).copyWith(
+                        dividerColor: Colors.transparent,
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                      ),
+                      child: ExpansionTile(
+                        initiallyExpanded: false,
+                        maintainState: false,
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: const EdgeInsets.only(
+                          top: 4,
+                          bottom: 4,
+                        ),
+                        iconColor: _accent,
+                        collapsedIconColor: _textSecondary,
+                        title: Text(
+                          "${r.completed + r.actionablePending + r.upcoming} tasks in today's reflection",
+                          style: const TextStyle(
+                            color: _textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: const Padding(
+                          padding: EdgeInsets.only(top: 3),
+                          child: Text(
+                            "View activity by category and status",
+                            style: TextStyle(
+                              color: _textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                        children: [
+                          if (r.completedByCategory.isEmpty &&
+                              r.actionableByCategory.isEmpty &&
+                              r.upcomingByCategory.isEmpty)
+                            const Text(
+                              "No tasks recorded today.",
+                              style: TextStyle(color: _textSecondary),
+                            ),
+
+                          ...r.completedByCategory.entries.map(
+                            (e) => _categoryRow(
+                              "${e.key} — Completed",
+                              e.value,
+                              _green,
+                            ),
+                          ),
+
+                          ...r.actionableByCategory.entries.map(
+                            (e) => _categoryRow(
+                              "${e.key} — Actionable",
+                              e.value,
+                              _orange,
+                            ),
+                          ),
+
+                          ...r.upcomingByCategory.entries.map(
+                            (e) => _categoryRow(
+                              "${e.key} — Upcoming",
+                              e.value,
+                              Colors.cyanAccent,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // ── Completed Tasks ──────────────────────────────────────
+                  if (r.completedTasks.isNotEmpty) ...[
+                    _sectionTitle(
+                      title: "Completed Today (${r.completedTasks.length})",
+                      icon: Icons.task_alt_rounded,
+                      color: _green,
+                    ),
+
+                    _cardBox(
+                      Column(
+                        children: [
+                          ...(_showAllCompletedTasks
+                                  ? r.completedTasks
+                                  : r.completedTasks.take(4))
+                              .map((task) => _taskRow(task)),
+
+                          if (r.completedTasks.length > 4) ...[
+                            const SizedBox(height: 8),
+
+                            const Divider(color: Colors.white10, height: 1),
+
+                            const SizedBox(height: 6),
+
+                            TextButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _showAllCompletedTasks =
+                                      !_showAllCompletedTasks;
+                                });
+                              },
+                              icon: Icon(
+                                _showAllCompletedTasks
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.keyboard_arrow_down_rounded,
+                                color: _accent,
+                              ),
+                              label: Text(
+                                _showAllCompletedTasks
+                                    ? "Show fewer"
+                                    : "View all ${r.completedTasks.length} completed tasks",
+                                style: const TextStyle(
+                                  color: _accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           );
         },

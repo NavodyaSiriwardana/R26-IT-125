@@ -2,8 +2,58 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/task_model.dart';
 import '../services/task_api_service.dart';
 
+import 'package:flutter/foundation.dart';
+import '../services/notification_service.dart';
+
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  Future<void> _cancelTaskNotificationsSafely(String taskId) async {
+    try {
+      await NotificationService.instance.cancelTaskNotifications(taskId);
+
+      debugPrint('Notifications cancelled for task: $taskId');
+    } catch (error, stackTrace) {
+      /*
+     * A notification cancellation failure must not undo a successfully
+     * completed Firestore operation.
+     */
+      debugPrint(
+        'Could not cancel notifications for '
+        'task $taskId: $error',
+      );
+
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _scheduleSnoozeReminderSafely({
+    required String taskId,
+    required String taskTitle,
+    required DateTime snoozedUntil,
+  }) async {
+    try {
+      final scheduled = await NotificationService.instance
+          .scheduleSnoozeReminder(
+            taskId: taskId,
+            taskTitle: taskTitle,
+            snoozedUntil: snoozedUntil,
+          );
+
+      debugPrint(
+        scheduled
+            ? 'Snooze notification scheduled for task: $taskId'
+            : 'Snooze notification was not scheduled for task: $taskId',
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Could not schedule snooze notification '
+        'for task $taskId: $error',
+      );
+
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
 
   // ── Add a new task ────────────────────────────────────────────────────────
   // Returns the new document's Firestore ID so callers (e.g. the form
@@ -54,8 +104,12 @@ class FirestoreService {
       "schedule_status": "completed",
       "scheduled_start": "",
       "scheduled_end": "",
+      "scheduled_parts": [],
+      "scheduled_part_count": 0,
       "schedule_failure_reason": "",
     });
+
+    await _cancelTaskNotificationsSafely(taskId);
 
     await rerankAllTasks();
   }
@@ -68,7 +122,19 @@ class FirestoreService {
   ) async {
     final now = DateTime.now();
 
-    await _firestore.collection('tasks').doc(taskId).update({
+    final taskReference = _firestore.collection('tasks').doc(taskId);
+
+    final taskSnapshot = await taskReference.get();
+
+    final taskData = taskSnapshot.data();
+
+    final taskTitle = taskData?['title']?.toString().trim();
+
+    final safeTaskTitle = taskTitle == null || taskTitle.isEmpty
+        ? 'Your task'
+        : taskTitle;
+
+    await taskReference.update({
       "snooze_count": currentCount + 1,
       "is_snoozed": true,
       "snoozed_until": snoozedUntil.toIso8601String(),
@@ -77,6 +143,8 @@ class FirestoreService {
       "schedule_status": "unscheduled",
       "scheduled_start": "",
       "scheduled_end": "",
+      "scheduled_parts": [],
+      "scheduled_part_count": 0,
       "schedule_failure_reason": "",
 
       "snooze_history": FieldValue.arrayUnion([
@@ -87,6 +155,16 @@ class FirestoreService {
       ]),
     });
 
+    /*
+   * scheduleSnoozeReminder() first cancels the task's existing
+   * daily-plan notifications and then creates its snooze reminder.
+   */
+    await _scheduleSnoozeReminderSafely(
+      taskId: taskId,
+      taskTitle: safeTaskTitle,
+      snoozedUntil: snoozedUntil,
+    );
+
     await rerankAllTasks();
   }
 
@@ -95,12 +173,17 @@ class FirestoreService {
     await _firestore.collection('tasks').doc(taskId).update({
       "is_snoozed": false,
       "snoozed_until": "",
+
       "schedule_date": "",
       "schedule_status": "unscheduled",
       "scheduled_start": "",
       "scheduled_end": "",
+      "scheduled_parts": [],
+      "scheduled_part_count": 0,
       "schedule_failure_reason": "",
     });
+
+    await _cancelTaskNotificationsSafely(taskId);
 
     await rerankAllTasks();
   }
@@ -115,20 +198,27 @@ class FirestoreService {
     final deadlineHours =
         newDeadline.difference(DateTime.now()).inSeconds / 3600.0;
 
-    final taskHours = estimatedDurationMinutes / 60.0;
+    final taskHours = (estimatedDurationMinutes / 60.0)
+        .clamp(0.25, double.infinity)
+        .toDouble();
 
-    final timePressure = taskHours > 0
-        ? (deadlineHours / taskHours).clamp(0.0, 200.0).toDouble()
-        : 200.0;
+    final timePressure = (deadlineHours.clamp(0.0, double.infinity) / taskHours)
+        .clamp(0.0, 200.0)
+        .toDouble();
 
     await _firestore.collection('tasks').doc(taskId).update({
       "postpone_count": currentCount + 1,
       "deadline": newDeadline.toIso8601String(),
       "deadline_hours": deadlineHours,
       "time_pressure": timePressure,
+
+      "schedule_date": "",
       "schedule_status": "unscheduled",
       "scheduled_start": "",
       "scheduled_end": "",
+      "scheduled_parts": [],
+      "scheduled_part_count": 0,
+      "schedule_failure_reason": "",
 
       "postpone_history": FieldValue.arrayUnion([
         {
@@ -138,9 +228,10 @@ class FirestoreService {
       ]),
     });
 
-    // Postponing changes urgency/time_pressure for THIS task, which can
-    // change how it compares to every other task — so re-rank everything,
-    // not just this one.
+    await _cancelTaskNotificationsSafely(taskId);
+
+    // The changed deadline and time pressure can affect
+    // the ranking of the complete active task set.
     await rerankAllTasks();
   }
 
@@ -196,6 +287,99 @@ class FirestoreService {
   // will silently mismatch tasks. Safest fix on the backend: have
   // /rank-tasks echo back whatever "_doc_id" (or similar passthrough key)
   // it received for each task.
+
+  // ── Mark expired scheduled sessions as missed ───────────────────────────────
+  //
+  // A task remains pending because missing a scheduled work session does not
+  // mean the task itself is completed or its deadline has passed.
+  //
+  // Existing scheduled timestamps are preserved for history and analytics.
+
+  DateTime? _getFinalScheduledEndFromData(Map<String, dynamic> data) {
+    final rawParts = data['scheduled_parts'];
+
+    // For split tasks, use the latest scheduled-part end.
+    if (rawParts is List && rawParts.isNotEmpty) {
+      DateTime? latestEnd;
+
+      for (final rawPart in rawParts) {
+        if (rawPart is! Map) {
+          continue;
+        }
+
+        final rawEnd = rawPart['scheduled_end']?.toString() ?? '';
+
+        final end = DateTime.tryParse(rawEnd)?.toLocal();
+
+        if (end != null && (latestEnd == null || end.isAfter(latestEnd))) {
+          latestEnd = end;
+        }
+      }
+
+      if (latestEnd != null) {
+        return latestEnd;
+      }
+    }
+
+    final rawEnd = data['scheduled_end']?.toString() ?? '';
+
+    if (rawEnd.isEmpty) {
+      return null;
+    }
+
+    return DateTime.tryParse(rawEnd)?.toLocal();
+  }
+
+  Future<int> markMissedSchedules() async {
+    final snapshot = await _firestore
+        .collection('tasks')
+        .where('schedule_status', isEqualTo: 'scheduled')
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      return 0;
+    }
+
+    final now = DateTime.now();
+    final batch = _firestore.batch();
+
+    int missedCount = 0;
+
+    for (final document in snapshot.docs) {
+      final data = document.data();
+
+      final status = data['status']?.toString().toLowerCase() ?? 'pending';
+
+      // Completed tasks must never be converted to missed.
+      if (status != 'pending') {
+        continue;
+      }
+
+      final finalScheduledEnd = _getFinalScheduledEndFromData(data);
+
+      if (finalScheduledEnd == null) {
+        continue;
+      }
+
+      if (finalScheduledEnd.isBefore(now)) {
+        batch.update(document.reference, {
+          'schedule_status': 'missed',
+          'schedule_failure_reason':
+              'The scheduled time passed before the task was completed.',
+          'schedule_missed_at': now.toIso8601String(),
+        });
+
+        missedCount++;
+      }
+    }
+
+    if (missedCount > 0) {
+      await batch.commit();
+    }
+
+    return missedCount;
+  }
+
   Future<void> rerankAllTasks() async {
     // Snoozed tasks are excluded from ranking — "snooze" means "don't show
     // or compare me right now." They rejoin the pool automatically once
@@ -237,7 +421,11 @@ class FirestoreService {
         }
       }
 
-      final taskHours = estimatedMinutes > 0 ? estimatedMinutes / 60.0 : 0.25;
+      // Matches Stage 1 and training:
+      // durations below 15 minutes still use a 0.25-hour floor.
+      final taskHours = (estimatedMinutes / 60.0)
+          .clamp(0.25, double.infinity)
+          .toDouble();
 
       final timePressure = (deadlineHours / taskHours)
           .clamp(0.0, 200.0)
@@ -271,6 +459,27 @@ class FirestoreService {
 
     final ranked = await TaskApiService.rankTasks(payload);
 
+    if (ranked.length != docs.length) {
+      throw StateError(
+        "Stage 2 returned ${ranked.length} tasks, "
+        "but ${docs.length} were submitted.",
+      );
+    }
+
+    final returnedIds = ranked
+        .map((item) => (item as Map<String, dynamic>)["_doc_id"]?.toString())
+        .toSet();
+
+    final expectedIds = docs.map((doc) => doc.id).toSet();
+
+    if (returnedIds.contains(null) ||
+        returnedIds.length != expectedIds.length ||
+        !returnedIds.containsAll(expectedIds)) {
+      throw StateError(
+        "Stage 2 response task IDs do not match Firestore task IDs.",
+      );
+    }
+
     final batch = _firestore.batch();
 
     // Check whether the backend echoed "_doc_id" back to us.
@@ -294,7 +503,11 @@ class FirestoreService {
           "pred_score": r["pred_score"],
           "normalized_score": r["normalized_score"],
           "priority": r["priority"],
-          "reason_tags": r["reason_tags"],
+          "rank_position": r["rank_position"],
+          "reason_tags": r["reason_tags"] ?? [],
+          "reason_details": r["reason_details"] ?? [],
+          "score_interpretation":
+              r["score_interpretation"] ?? "relative_priority_not_probability",
           "deadline_hours": r["deadline_hours"],
           "time_pressure": r["time_pressure"],
         };
@@ -380,6 +593,57 @@ class FirestoreService {
         "is_splittable": data["is_splittable"] ?? false,
       };
     }).toList();
+  }
+
+  Future<void> validateScheduleCandidates(Map<String, dynamic> plan) async {
+    final scheduled = plan["scheduled_tasks"] as List<dynamic>? ?? [];
+
+    final taskIds = scheduled
+        .map((item) {
+          final task = Map<String, dynamic>.from(item as Map);
+
+          return task["_doc_id"]?.toString();
+        })
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (taskIds.isEmpty) {
+      return;
+    }
+
+    final documents = await Future.wait(
+      taskIds.map((id) => _firestore.collection('tasks').doc(id).get()),
+    );
+
+    final invalidTasks = <String>[];
+
+    for (final document in documents) {
+      if (!document.exists) {
+        invalidTasks.add("A task was removed");
+
+        continue;
+      }
+
+      final data = document.data()!;
+
+      final title = data["title"]?.toString() ?? "Untitled task";
+
+      final status = data["status"]?.toString().toLowerCase() ?? "pending";
+
+      final isSnoozed = data["is_snoozed"] == true;
+
+      if (status != "pending") {
+        invalidTasks.add("$title is no longer pending");
+      } else if (isSnoozed) {
+        invalidTasks.add("$title is currently snoozed");
+      }
+    }
+
+    if (invalidTasks.isNotEmpty) {
+      throw StateError(invalidTasks.join("; "));
+    }
   }
 
   Future<void> saveGeneratedSchedule(Map<String, dynamic> result) async {
@@ -489,7 +753,10 @@ class FirestoreService {
   // ── Delete a task ─────────────────────────────────────────────────────────
   Future<void> deleteTask(String taskId) async {
     await _firestore.collection('tasks').doc(taskId).delete();
-    // Deleting changes the candidate set too — re-rank what's left.
+
+    await _cancelTaskNotificationsSafely(taskId);
+
+    // Deleting changes the candidate set.
     await rerankAllTasks();
   }
 

@@ -52,139 +52,701 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
   // UI state
   bool _isPredicting = false;
   bool _isAddingTask = false;
+  String _submissionStatus = "Create & Rank Task";
   bool _predicted = false;
 
+  // Editors remain hidden until the student chooses to adjust a
+  // calculated or Stage 1 ML-generated value.
+  bool _showUrgencyEditor = false;
+  bool _showCognitiveEditor = false;
+  bool _showEnergyEditor = false;
+
   // ─────────────────────────────────────────────────────────────────────────
-  // INTERACTIVE slider card
+  // PRODUCT-LEVEL PRIORITY ANALYSIS COMPONENTS
   // ─────────────────────────────────────────────────────────────────────────
-  Widget buildSliderCard({
+
+  String _scoreLabel(double value) {
+    final score = value.round();
+
+    if (score <= 3) return "Low";
+    if (score <= 6) return "Moderate";
+    if (score <= 8) return "High";
+    return "Very High";
+  }
+
+  Widget _buildSourceBadge({
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisCompleteBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF6D5DFB).withValues(alpha: 0.22),
+            const Color(0xFF22D3EE).withValues(alpha: 0.10),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF8B7CFF).withValues(alpha: 0.45),
+        ),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Color(0xFF7C6CFF),
+              shape: BoxShape.circle,
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(7),
+              child: Icon(Icons.check_rounded, size: 18, color: Colors.white),
+            ),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Priority analysis complete",
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  "Time Urgency was calculated from the available time, "
+                  "deadline and required work time. Cognitive Load and "
+                  "Energy Required were predicted by the Stage 1 ML model.",
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSystemScoreRow({
     required String title,
     required String description,
     required IconData icon,
     required double value,
+    required double originalValue,
     required Color color,
-    required String badgeText,
+    required String sourceLabel,
+    required IconData sourceIcon,
+    required bool adjusted,
+    required bool editorVisible,
+    required VoidCallback onToggleEditor,
     required ValueChanged<double> onChanged,
-    VoidCallback? onReset,
+    required VoidCallback onReset,
   }) {
-    final bool isUserValue =
-        badgeText == "You Adjusted" || badgeText == "Your Input";
-
-    final Color badgeColor = isUserValue
-        ? Colors.tealAccent
-        : badgeText == "Input Required"
-        ? Colors.orangeAccent
-        : Colors.deepPurpleAccent;
-
-    return Card(
-      color: const Color(0xFF1E293B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: color),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    "${value.round()}/10",
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    _scoreLabel(value),
                     style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: badgeColor.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: badgeColor, width: 1),
-                  ),
-                  child: Text(
-                    badgeText,
-                    style: TextStyle(
+                      color: Colors.white60,
                       fontSize: 11,
-                      color: badgeColor,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                ],
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              _buildSourceBadge(
+                label: adjusted ? "Student adjusted" : sourceLabel,
+                icon: adjusted ? Icons.person_rounded : sourceIcon,
+                color: adjusted ? Colors.tealAccent : color,
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onToggleEditor,
+                icon: Icon(
+                  editorVisible ? Icons.close_rounded : Icons.tune_rounded,
+                  size: 16,
                 ),
-              ],
-            ),
+                label: Text(editorVisible ? "Done" : "Adjust"),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+
+          if (adjusted) ...[
             const SizedBox(height: 8),
-            Text(
-              description,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13,
-                height: 1.4,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.tealAccent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.compare_arrows_rounded,
+                    color: Colors.tealAccent,
+                    size: 17,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "Original: ${originalValue.round()}/10  →  "
+                      "Your adjustment: ${value.round()}/10",
+                      style: const TextStyle(
+                        color: Colors.tealAccent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  TextButton(onPressed: onReset, child: const Text("Restore")),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            Slider(
-              value: value.clamp(1.0, 10.0),
-              min: 1,
-              max: 10,
-              divisions: 9,
-              label: value.round().toString(),
-              activeColor: _predicted ? color : Colors.grey,
-              inactiveColor: Colors.grey.withOpacity(0.3),
-              onChanged: _predicted ? onChanged : null,
+          ],
+
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            child: editorVisible
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Column(
+                      children: [
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 5,
+                            activeTrackColor: color,
+                            inactiveTrackColor: Colors.white.withValues(
+                              alpha: 0.12,
+                            ),
+                            thumbColor: color,
+                            overlayColor: color.withValues(alpha: 0.12),
+                            valueIndicatorColor: color,
+                            showValueIndicator: ShowValueIndicator.always,
+                          ),
+                          child: Slider(
+                            value: value.clamp(1.0, 10.0),
+                            min: 1,
+                            max: 10,
+                            divisions: 9,
+                            label: value.round().toString(),
+                            onChanged: onChanged,
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 6),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                "Low",
+                                style: TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              Text(
+                                "Moderate",
+                                style: TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 10,
+                                ),
+                              ),
+                              Text(
+                                "Very High",
+                                style: TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSystemAnalysisCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF172235),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "SYSTEM ANALYSIS",
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          ),
+
+          _buildSystemScoreRow(
+            title: "Time Urgency",
+            description:
+                "How soon this task needs attention based on its deadline "
+                "and required work time. Final priority also considers "
+                "your ratings and other pending tasks.",
+            icon: Icons.schedule_rounded,
+            value: urgency,
+            originalValue: _toScale(_rawUrgency ?? 0.5),
+            color: const Color(0xFF60A5FA),
+            sourceLabel: "Calculated",
+            sourceIcon: Icons.calculate_rounded,
+            adjusted: _urgencyAdjusted,
+            editorVisible: _showUrgencyEditor,
+            onToggleEditor: () {
+              setState(() {
+                _showUrgencyEditor = !_showUrgencyEditor;
+              });
+            },
+            onChanged: (value) {
+              setState(() {
+                urgency = value;
+                _urgencyAdjusted = true;
+              });
+            },
+            onReset: () {
+              setState(() {
+                urgency = _toScale(_rawUrgency ?? 0.5);
+                _urgencyAdjusted = false;
+              });
+            },
+          ),
+
+          Divider(color: Colors.white.withValues(alpha: 0.08)),
+
+          Padding(
+            padding: const EdgeInsets.only(top: 14, bottom: 2),
+            child: Row(
               children: [
-                Text(
-                  !_predicted
-                      ? "Analyze the task first"
-                      : badgeText == "Input Required"
-                      ? "Move the slider to confirm your value"
-                      : "$badgeText: ${value.round()}/10",
-                  style: TextStyle(
-                    color: _predicted ? Colors.white54 : Colors.white30,
-                    fontSize: 12,
-                  ),
-                ),
-                Text(
-                  _predicted ? value.round().toString() : "-",
-                  style: TextStyle(
-                    color: _predicted ? color : Colors.grey,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                _buildSourceBadge(
+                  label: "Stage 1 ML predictions",
+                  icon: Icons.auto_awesome_rounded,
+                  color: const Color(0xFF9B87FF),
                 ),
               ],
             ),
-            if (_predicted && onReset != null)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: onReset,
-                  icon: const Icon(
-                    Icons.refresh_rounded,
-                    size: 14,
-                    color: Colors.deepPurpleAccent,
-                  ),
-                  label: const Text(
-                    "Reset Suggestion",
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.deepPurpleAccent,
-                    ),
-                  ),
-                ),
-              ),
-          ],
+          ),
+
+          _buildSystemScoreRow(
+            title: "Cognitive Load",
+            description: "Estimated mental demand for completing this task.",
+            icon: Icons.psychology_rounded,
+            value: cognitiveLoad,
+            originalValue: _toScale(_rawCognitiveLoad ?? 0.5),
+            color: const Color(0xFFB56CFF),
+            sourceLabel: "Stage 1 ML",
+            sourceIcon: Icons.model_training_rounded,
+            adjusted: _cognitiveLoadAdjusted,
+            editorVisible: _showCognitiveEditor,
+            onToggleEditor: () {
+              setState(() {
+                _showCognitiveEditor = !_showCognitiveEditor;
+              });
+            },
+            onChanged: (value) {
+              setState(() {
+                cognitiveLoad = value;
+                _cognitiveLoadAdjusted = true;
+              });
+            },
+            onReset: () {
+              setState(() {
+                cognitiveLoad = _toScale(_rawCognitiveLoad ?? 0.5);
+                _cognitiveLoadAdjusted = false;
+              });
+            },
+          ),
+
+          Divider(color: Colors.white.withValues(alpha: 0.08)),
+
+          _buildSystemScoreRow(
+            title: "Energy Required",
+            description:
+                "Estimated physical or mental energy needed for the task.",
+            icon: Icons.bolt_rounded,
+            value: energyLevel,
+            originalValue: _toScale(_rawEnergyLevel ?? 0.5),
+            color: const Color(0xFF9B87FF),
+            sourceLabel: "Stage 1 ML",
+            sourceIcon: Icons.model_training_rounded,
+            adjusted: _energyLevelAdjusted,
+            editorVisible: _showEnergyEditor,
+            onToggleEditor: () {
+              setState(() {
+                _showEnergyEditor = !_showEnergyEditor;
+              });
+            },
+            onChanged: (value) {
+              setState(() {
+                energyLevel = value;
+                _energyLevelAdjusted = true;
+              });
+            },
+            onReset: () {
+              setState(() {
+                energyLevel = _toScale(_rawEnergyLevel ?? 0.5);
+                _energyLevelAdjusted = false;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatingSelector({
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color color,
+    required double value,
+    required bool selected,
+    required ValueChanged<double> onSelected,
+  }) {
+    final selectedScore = value.round();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF172235),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: selected
+              ? Colors.tealAccent.withValues(alpha: 0.28)
+              : Colors.orangeAccent.withValues(alpha: 0.28),
         ),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              _buildSourceBadge(
+                label: selected ? "Your input" : "Input required",
+                icon: selected
+                    ? Icons.person_rounded
+                    : Icons.priority_high_rounded,
+                color: selected ? Colors.tealAccent : Colors.orangeAccent,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          Text(
+            description,
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 10,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 5,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 1.35,
+            ),
+            itemBuilder: (context, index) {
+              final score = index + 1;
+              final isSelected = selected && selectedScore == score;
+
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => onSelected(score.toDouble()),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? color
+                          : Colors.white.withValues(alpha: 0.055),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? color
+                            : Colors.white.withValues(alpha: 0.10),
+                      ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: color.withValues(alpha: 0.24),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Text(
+                      score.toString(),
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 10),
+
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Low",
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+              Text(
+                "Moderate",
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+              Text(
+                "Very High",
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+            ],
+          ),
+
+          if (selected) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.tealAccent.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.tealAccent,
+                    size: 17,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    "Selected: $selectedScore/10 · "
+                    "${_scoreLabel(value)}",
+                    style: const TextStyle(
+                      color: Colors.tealAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudentConfirmationSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Your Confirmation",
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          "These values depend on your personal goals and the consequences "
+          "you expect. Select one score for each.",
+          style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
+        ),
+        const SizedBox(height: 14),
+
+        _buildRatingSelector(
+          title: "Importance",
+          description:
+              "How important is this task to your personal or academic goals?",
+          icon: Icons.star_rounded,
+          color: const Color(0xFF4F8CFF),
+          value: importance,
+          selected: _importanceSelected,
+          onSelected: (score) {
+            setState(() {
+              importance = score;
+              _importanceSelected = true;
+            });
+          },
+        ),
+
+        const SizedBox(height: 14),
+
+        _buildRatingSelector(
+          title: "Consequence of Delay",
+          description:
+              "How serious would the consequences be if this task were "
+              "delayed or skipped?",
+          icon: Icons.error_outline_rounded,
+          color: const Color(0xFFFFA63D),
+          value: severity,
+          selected: _severitySelected,
+          onSelected: (score) {
+            setState(() {
+              severity = score;
+              _severitySelected = true;
+            });
+          },
+        ),
+      ],
     );
   }
 
@@ -192,6 +754,12 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
   // STEP 1: Analyze Task
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> analyzeTask() async {
+    if (_isPredicting || _isAddingTask) {
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+
     if (titleController.text.trim().isEmpty) {
       _snack("Please enter a task name");
       return;
@@ -232,6 +800,10 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
         estimatedDurationMinutes: actualDurationMinutes,
       );
 
+      if (!mounted) {
+        return;
+      }
+
       final scores = result["predicted_scores"] as Map<String, dynamic>;
 
       setState(() {
@@ -260,6 +832,10 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
         _energyLevelAdjusted = false;
 
         _predicted = true;
+
+        _showUrgencyEditor = false;
+        _showCognitiveEditor = false;
+        _showEnergyEditor = false;
       });
 
       _snack(
@@ -269,7 +845,11 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
     } catch (e) {
       _snack("Failed to analyze task: $e");
     } finally {
-      setState(() => _isPredicting = false);
+      if (mounted) {
+        setState(() {
+          _isPredicting = false;
+        });
+      }
     }
   }
 
@@ -283,6 +863,12 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
   //   4. Show the success dialog with the real priority + reason tags
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> addTask() async {
+    if (_isAddingTask || _isPredicting) {
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+
     if (!_predicted) {
       _snack("Please analyze the task first");
       return;
@@ -293,7 +879,10 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
       return;
     }
 
-    setState(() => _isAddingTask = true);
+    setState(() {
+      _isAddingTask = true;
+      _submissionStatus = "Saving task...";
+    });
 
     try {
       final startDT = _combine(startDate!, startTime!);
@@ -412,8 +1001,24 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
         },
       );
 
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _submissionStatus = "Comparing priorities...";
+      });
+
       // ── Step 2: Re-rank ALL pending tasks together ───────────────────────
       await firestoreService.rerankAllTasks();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _submissionStatus = "Preparing results...";
+      });
 
       // ── Step 3: Fetch this exact task by its doc id ───────────────────────
       final allTasks = await firestoreService.getAllTasksRaw();
@@ -584,7 +1189,12 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
     } catch (e) {
       _snack("Failed to add task: $e");
     } finally {
-      if (mounted) setState(() => _isAddingTask = false);
+      if (mounted) {
+        setState(() {
+          _isAddingTask = false;
+          _submissionStatus = "Create & Rank Task";
+        });
+      }
     }
   }
 
@@ -606,6 +1216,10 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
   void _resetPredictions() {
     _predicted = false;
+
+    _showUrgencyEditor = false;
+    _showCognitiveEditor = false;
+    _showEnergyEditor = false;
 
     _urgencyAdjusted = false;
     _cognitiveLoadAdjusted = false;
@@ -681,38 +1295,127 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
   }
 
   Future<void> pickStart() async {
+    FocusScope.of(context).unfocus();
+
+    final now = DateTime.now();
+
+    final today = DateTime(now.year, now.month, now.day);
+
+    final initialDate = startDate == null || startDate!.isBefore(today)
+        ? today
+        : startDate!;
+
     final date = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2030),
+      initialDate: initialDate,
+      firstDate: today,
+      lastDate: DateTime(2030, 12, 31),
     );
-    if (date == null) return;
+
+    if (date == null || !mounted) {
+      return;
+    }
+
     final time = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialTime: startTime ?? TimeOfDay.now(),
     );
-    if (time == null) return;
+
+    if (time == null || !mounted) {
+      return;
+    }
+
     setState(() {
       startDate = date;
       startTime = time;
+
+      /*
+     * If the existing deadline would now be before the new
+     * availability time, clear it instead of leaving invalid data.
+     */
+      if (endDate != null && endTime != null) {
+        final selectedStart = _combine(date, time);
+
+        final selectedEnd = _combine(endDate!, endTime!);
+
+        if (!selectedEnd.isAfter(selectedStart)) {
+          endDate = null;
+          endTime = null;
+        }
+      }
+
       _resetPredictions();
     });
   }
 
   Future<void> pickEnd() async {
+    FocusScope.of(context).unfocus();
+
+    final now = DateTime.now();
+
+    final today = DateTime(now.year, now.month, now.day);
+
+    final earliestDate = startDate ?? today;
+
+    final initialDate = endDate != null && !endDate!.isBefore(earliestDate)
+        ? endDate!
+        : earliestDate;
+
     final date = await showDatePicker(
       context: context,
-      initialDate: startDate ?? DateTime.now(),
-      firstDate: startDate ?? DateTime.now(),
-      lastDate: DateTime(2030),
+      initialDate: initialDate,
+      firstDate: earliestDate,
+      lastDate: DateTime(2030, 12, 31),
     );
-    if (date == null) return;
+
+    if (date == null || !mounted) {
+      return;
+    }
+
+    TimeOfDay suggestedTime = endTime ?? TimeOfDay.now();
+
+    /*
+   * When the deadline date is the same as the availability
+   * date, suggest a sensible time after the task begins.
+   */
+    if (startDate != null &&
+        startTime != null &&
+        date.year == startDate!.year &&
+        date.month == startDate!.month &&
+        date.day == startDate!.day &&
+        endTime == null) {
+      final suggestedDateTime = _combine(
+        startDate!,
+        startTime!,
+      ).add(Duration(minutes: estimatedDurationMinutes));
+
+      suggestedTime = TimeOfDay.fromDateTime(suggestedDateTime);
+    }
+
     final time = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialTime: suggestedTime,
     );
-    if (time == null) return;
+
+    if (time == null || !mounted) {
+      return;
+    }
+
+    final selectedEnd = _combine(date, time);
+
+    if (startDate != null && startTime != null) {
+      final selectedStart = _combine(startDate!, startTime!);
+
+      if (!selectedEnd.isAfter(selectedStart)) {
+        _snack(
+          "Deadline must be after the available-from time.",
+          color: Colors.orangeAccent,
+        );
+
+        return;
+      }
+    }
+
     setState(() {
       endDate = date;
       endTime = time;
@@ -1097,43 +1800,76 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
+              child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _predicted
-                      ? Colors.green.withOpacity(0.3)
+                      ? Colors.green.withValues(alpha: 0.30)
                       : Colors.deepPurpleAccent,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.deepPurpleAccent.withValues(
+                    alpha: 0.40,
+                  ),
+                  disabledForegroundColor: Colors.white70,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
                   ),
                 ),
-                icon: _isPredicting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+                onPressed: _isPredicting || _isAddingTask ? null : analyzeTask,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: _isPredicting
+                      ? const Row(
+                          key: ValueKey<String>('analyzing'),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: 10),
+                            Text(
+                              "Analyzing...",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          key: ValueKey<String>(
+                            _predicted
+                                ? 'update-analysis'
+                                : 'generate-analysis',
+                          ),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _predicted
+                                  ? Icons.check_circle_rounded
+                                  : Icons.auto_awesome_rounded,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _predicted
+                                  ? "Update Priority Analysis"
+                                  : "Generate Priority Analysis",
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
-                      )
-                    : Icon(
-                        _predicted
-                            ? Icons.check_circle_rounded
-                            : Icons.auto_awesome_rounded,
-                        color: Colors.white,
-                      ),
-                label: Text(
-                  _isPredicting
-                      ? "Analyzing..."
-                      : _predicted
-                      ? "Update Priority Analysis"
-                      : "Generate Priority Analysis",
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
                 ),
-                onPressed: _isPredicting ? null : analyzeTask,
               ),
             ),
 
@@ -1151,144 +1887,198 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             const SizedBox(height: 24),
 
             if (_predicted) ...[
+              _buildAnalysisCompleteBanner(),
+
+              const SizedBox(height: 24),
+
               const Text(
-                "Priority Scores",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                "Priority Analysis",
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
               ),
-              const SizedBox(height: 4),
+
+              const SizedBox(height: 5),
+
               const Text(
-                "Review the calculated and model-suggested values. "
-                "Set Importance and Impact if Delayed before creating the task.",
+                "Review the system-generated results, then provide the two "
+                "values that require your personal judgement.",
                 style: TextStyle(
                   color: Colors.white54,
-                  fontSize: 13,
+                  fontSize: 12,
                   height: 1.4,
                 ),
               ),
-              const SizedBox(height: 12),
 
-              buildSliderCard(
-                title: "Urgency",
-                icon: Icons.warning_amber_rounded,
-                description:
-                    "How soon this task needs attention based on its "
-                    "deadline and required work time.",
-                value: urgency,
-                color: Colors.redAccent,
-                badgeText: _urgencyAdjusted ? "You Adjusted" : "Calculated",
-                onChanged: (v) => setState(() {
-                  urgency = v;
-                  _urgencyAdjusted = true;
-                }),
-                onReset: _urgencyAdjusted
-                    ? () => setState(() {
-                        urgency = _toScale(_rawUrgency ?? 0.5);
-                        _urgencyAdjusted = false;
-                      })
-                    : null,
-              ),
-              buildSliderCard(
-                title: "Importance",
-                icon: Icons.star_rounded,
-                description:
-                    "How important this task is to your personal or academic goals.",
-                value: importance,
-                color: Colors.blueAccent,
-                badgeText: _importanceSelected
-                    ? "Your Input"
-                    : "Input Required",
-                onChanged: (v) => setState(() {
-                  importance = v;
-                  _importanceSelected = true;
-                }),
-              ),
-              buildSliderCard(
-                title: "Consequence of Delay",
-                icon: Icons.error_outline_rounded,
-                description:
-                    "How serious the consequences would be if this task "
-                    "is delayed or skipped.",
-                value: severity,
-                color: Colors.orangeAccent,
-                badgeText: _severitySelected ? "Your Input" : "Input Required",
-                onChanged: (v) => setState(() {
-                  severity = v;
-                  _severitySelected = true;
-                }),
-              ),
-              buildSliderCard(
-                title: "Cognitive Load",
-                icon: Icons.psychology_rounded,
-                description: "How mentally demanding this task is.",
-                value: cognitiveLoad,
-                color: Colors.purpleAccent,
-                badgeText: _cognitiveLoadAdjusted
-                    ? "You Adjusted"
-                    : "Model Suggested",
-                onChanged: (v) => setState(() {
-                  cognitiveLoad = v;
-                  _cognitiveLoadAdjusted = true;
-                }),
-                onReset: _cognitiveLoadAdjusted
-                    ? () => setState(() {
-                        cognitiveLoad = _toScale(_rawCognitiveLoad ?? 0.5);
-                        _cognitiveLoadAdjusted = false;
-                      })
-                    : null,
-              ),
-              buildSliderCard(
-                title: "Energy Required",
-                icon: Icons.bolt_rounded,
-                description:
-                    "How much physical or mental energy this task requires.",
-                value: energyLevel,
-                color: Colors.yellowAccent,
-                badgeText: _energyLevelAdjusted
-                    ? "You Adjusted"
-                    : "Model Suggested",
-                onChanged: (v) => setState(() {
-                  energyLevel = v;
-                  _energyLevelAdjusted = true;
-                }),
-                onReset: _energyLevelAdjusted
-                    ? () => setState(() {
-                        energyLevel = _toScale(_rawEnergyLevel ?? 0.5);
-                        _energyLevelAdjusted = false;
-                      })
-                    : null,
-              ),
+              const SizedBox(height: 14),
+
+              _buildSystemAnalysisCard(),
+
+              const SizedBox(height: 26),
+
+              _buildStudentConfirmationSection(),
 
               const SizedBox(height: 30),
 
-              SizedBox(
+              Container(
                 width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _predicted
-                        ? Colors.deepPurpleAccent
-                        : Colors.grey,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF172235),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
                   ),
-                  onPressed: !_isAddingTask ? addTask : null,
-                  child: _isAddingTask
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFF7C6CFF,
+                            ).withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        )
-                      : const Text(
-                          "Create Task",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                          child: const Icon(
+                            Icons.sort_rounded,
+                            color: Color(0xFF9B87FF),
+                            size: 20,
                           ),
                         ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Stage 2 Task Ranking",
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              SizedBox(height: 3),
+                              Text(
+                                "This task will be compared with your pending tasks "
+                                "to determine its priority.",
+                                style: TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 11,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              _importanceSelected && _severitySelected
+                              ? const Color(0xFF7C4DFF)
+                              : Colors.white.withValues(alpha: 0.08),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Colors.white.withValues(
+                            alpha: 0.08,
+                          ),
+                          disabledForegroundColor: Colors.white38,
+                          elevation: _importanceSelected && _severitySelected
+                              ? 4
+                              : 0,
+                          padding: const EdgeInsets.symmetric(vertical: 17),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                        ),
+                        onPressed:
+                            !_isAddingTask &&
+                                !_isPredicting &&
+                                _importanceSelected &&
+                                _severitySelected
+                            ? addTask
+                            : null,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeIn,
+                          child: _isAddingTask
+                              ? Row(
+                                  key: ValueKey<String>(_submissionStatus),
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(
+                                      width: 19,
+                                      height: 19,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Flexible(
+                                      child: Text(
+                                        _submissionStatus,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : const Row(
+                                  key: ValueKey<String>('create-task'),
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.auto_awesome_rounded),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      "Create & Rank Task",
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ),
+
+                    if (!_importanceSelected || !_severitySelected) ...[
+                      const SizedBox(height: 10),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            color: Colors.orangeAccent,
+                            size: 14,
+                          ),
+                          SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              "Complete both required ratings to continue",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.orangeAccent,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],

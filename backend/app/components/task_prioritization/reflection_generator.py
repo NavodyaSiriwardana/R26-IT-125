@@ -91,11 +91,61 @@ Return exactly this structure:
 }
 """
 
+def _is_absence_only_strength(item: str) -> bool:
+    """
+    Detect statements that present the absence of undesirable
+    behaviour as a positive action.
+    """
+
+    normalized = " ".join(
+        item.strip().lower().split()
+    )
+
+    prohibited_patterns = (
+        "no overdue",
+        "without overdue",
+        "avoided overdue",
+        "did not become overdue",
+
+        "no snooz",
+        "without snooz",
+        "avoided snooz",
+        "did not snooze",
+
+        "no postpon",
+        "without postpon",
+        "avoided postpon",
+        "did not postpone",
+
+        "no late complet",
+        "without late complet",
+    )
+
+    return any(
+        pattern in normalized
+        for pattern in prohibited_patterns
+    )
+
 
 def generate_daily_reflection(data: dict) -> dict:
 
-    completion_rate = data.get("completion_rate", 0)
-    completion_percentage = round(completion_rate * 100)
+    completion_rate = data.get(
+        "completion_rate",
+        0,
+    )
+
+    completion_percentage = round(
+        completion_rate * 100
+    )
+
+    priority_adherence = data.get(
+        "priority_adherence",
+        0,
+    )
+
+    priority_adherence_percentage = round(
+        priority_adherence * 100
+    )
 
     prompt = f"""
 The following values are verified by the productivity analytics system.
@@ -104,13 +154,25 @@ Completion rate:
 {completion_percentage}%
 
 Priority adherence:
-{data.get("priority_adherence", 0)}
+{priority_adherence_percentage}%
 
 Completed tasks:
 {data.get("completed", 0)}
 
 Pending tasks:
 {data.get("pending", 0)}
+
+Actionable pending tasks:
+{data.get("actionable_pending", 0)}
+
+Upcoming tasks:
+{data.get("upcoming", 0)}
+
+Tasks included in today's provisional score:
+{data.get("scored_task_count", 0)}
+
+Is the current score provisional:
+{data.get("is_provisional", True)}
 
 Snoozes:
 {data.get("snoozes", 0)}
@@ -171,6 +233,11 @@ Remember:
 - Do not invent behaviour.
 - Keep the reflection concise.
 - Return only valid JSON.
+- If the reflection is provisional and actionable tasks remain,
+  recommend the most relevant currently actionable work.
+- Do not imply that an actionable task should wait until tomorrow
+  merely because the word "tomorrow" appears in its title.
+- Upcoming tasks are not currently actionable.
 """
 
     try:
@@ -286,11 +353,29 @@ Remember:
             )
 
         # Keep only valid, non-empty string items.
-        strengths = [
+        cleaned_strengths = [
             item.strip()
             for item in strengths
             if isinstance(item, str) and item.strip()
         ]
+
+        strengths = [
+            item
+            for item in cleaned_strengths
+            if not _is_absence_only_strength(item)
+        ]
+
+        removed_strengths = [
+            item
+            for item in cleaned_strengths
+            if _is_absence_only_strength(item)
+        ]
+
+        if removed_strengths:
+            print(
+                "Removed unsupported absence-only strengths:",
+                removed_strengths,
+            )
 
         improvements = [
             item.strip()
