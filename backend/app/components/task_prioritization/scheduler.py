@@ -875,9 +875,9 @@ def generate_schedule(
                 else:
                     reason_code = "capacity_conflict"
                     reason = (
-                        "No feasible slot remained within the task’s "
-                        "availability, deadline, duration, and break "
-                        "constraints."
+                        "This task could not be included after the scheduler "
+                        "selected the strongest feasible combination of tasks "
+                        "within the available planning time."
                     )
 
             unscheduled_tasks.append({
@@ -990,10 +990,10 @@ def generate_schedule(
             else:
                 reason_code = "capacity_conflict"
                 reason = (
-                    "No feasible slot remained within the task’s "
-                    "availability, deadline, duration, and break "
-                    "constraints."
-                )
+                    "This task could not be included after the scheduler "
+                    "selected the strongest feasible combination of tasks "
+                    "within the available planning time."
+                )              
 
             unscheduled_tasks.append({
                 "_doc_id": task_id,

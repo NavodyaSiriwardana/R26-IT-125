@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../services/firestore_service.dart';
 import '../services/task_api_service.dart';
 import '../services/productivity_analytics_service.dart';
+import '../services/notification_service.dart';
 
 class DailyPlanScreen extends StatefulWidget {
   const DailyPlanScreen({super.key});
@@ -25,6 +26,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
   String breakStrategy = "adaptive";
 
   bool isGenerating = false;
+  String _generationStatus = "Generate My Plan";
   bool isApplyingPlan = false;
   bool planConfirmed = false;
 
@@ -68,23 +70,68 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
     return "$hour:$minute";
   }
 
+  int _minutesSinceMidnight(TimeOfDay value) {
+    return value.hour * 60 + value.minute;
+  }
+
   Future<void> _generatePlan() async {
-    setState(() => isGenerating = true);
+    if (isGenerating || isApplyingPlan) {
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+
+    final startMinutes = _minutesSinceMidnight(availableStart);
+
+    final endMinutes = _minutesSinceMidnight(availableEnd);
+
+    if (endMinutes <= startMinutes) {
+      _showMessage("The planning end time must be after the start time.");
+
+      return;
+    }
+
+    setState(() {
+      isGenerating = true;
+      _generationStatus = "Refreshing priorities...";
+      scheduleResult = null;
+      planConfirmed = false;
+    });
 
     try {
+      // Stage 1: Refresh the time-sensitive Stage 2 ranking.
       await _firestoreService.rerankAllTasks();
 
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _generationStatus = "Loading eligible tasks...";
+      });
+
+      // Stage 2: Retrieve tasks that can participate in scheduling.
       final tasks = await _firestoreService.getSchedulableTasksRaw();
+
+      if (!mounted) {
+        return;
+      }
 
       if (tasks.isEmpty) {
         _showMessage("There are no pending tasks to schedule.");
+
         return;
       }
+
+      setState(() {
+        _generationStatus = "Building your schedule...";
+      });
 
       final selectedDateText = DateFormat(
         'yyyy-MM-dd',
       ).format(selectedPlanDate);
 
+      // Stage 3: Generate the constraint-based schedule.
       final result = await TaskApiService.generateSchedule(
         scheduleDate: selectedDateText,
         availableStart: _formatTimeOfDay(availableStart),
@@ -94,7 +141,21 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
         tasks: tasks,
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _generationStatus = "Preparing preview...";
+      });
+
+      // A short frame boundary lets the final progress message
+      // render before the larger result UI is inserted.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         scheduleResult = result;
@@ -102,11 +163,20 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
       });
 
       _showMessage("Plan options generated. Review and select a plan.");
-    } catch (error) {
-      _showMessage("Failed to generate plan: $error");
+    } catch (error, stackTrace) {
+      debugPrint("Daily-plan generation failed: $error");
+
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (mounted) {
+        _showMessage("The plan could not be generated. Please try again.");
+      }
     } finally {
       if (mounted) {
-        setState(() => isGenerating = false);
+        setState(() {
+          isGenerating = false;
+          _generationStatus = "Generate My Plan";
+        });
       }
     }
   }
@@ -116,6 +186,55 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
     required String planName,
   }) async {
     if (isApplyingPlan) return;
+
+    // Validate that the preview has not become outdated.
+    final scheduledTasks = plan["scheduled_tasks"] as List<dynamic>? ?? [];
+
+    if (scheduledTasks.isNotEmpty) {
+      final scheduledStarts = scheduledTasks
+          .map((item) {
+            final task = Map<String, dynamic>.from(item as Map);
+
+            final value = task["scheduled_start"]?.toString();
+
+            if (value == null || value.isEmpty) {
+              return null;
+            }
+
+            return DateTime.tryParse(value)?.toLocal();
+          })
+          .whereType<DateTime>()
+          .toList();
+
+      if (scheduledStarts.isEmpty) {
+        _showMessage(
+          "The generated plan contains invalid scheduling information. "
+          "Please generate it again.",
+        );
+
+        return;
+      }
+
+      scheduledStarts.sort();
+
+      final firstScheduledStart = scheduledStarts.first;
+
+      final now = DateTime.now();
+
+      if (!firstScheduledStart.isAfter(now)) {
+        setState(() {
+          scheduleResult = null;
+          planConfirmed = false;
+        });
+
+        _showMessage(
+          "This plan has become outdated. "
+          "Generate a new plan using the current time.",
+        );
+
+        return;
+      }
+    }
 
     setState(() {
       isApplyingPlan = true;
@@ -128,7 +247,27 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
 
       selectedPlan.remove("deadline_focused_alternative");
 
+      await _firestoreService.validateScheduleCandidates(selectedPlan);
+
       await _firestoreService.saveGeneratedSchedule(selectedPlan);
+
+      String? notificationWarning;
+
+      try {
+        final notificationCount = await NotificationService.instance
+            .schedulePlanNotifications(selectedPlan);
+
+        debugPrint('$notificationCount plan reminders scheduled.');
+
+        await NotificationService.instance.printPendingNotifications();
+      } catch (error, stackTrace) {
+        notificationWarning =
+            'The plan was saved, but its reminders could not be scheduled.';
+
+        debugPrint('Plan notification scheduling failed: $error');
+
+        debugPrintStack(stackTrace: stackTrace);
+      }
 
       if (!mounted) return;
 
@@ -137,8 +276,13 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
         planConfirmed = true;
       });
 
-      _showMessage("$planName saved as your daily plan.");
+      final message =
+          notificationWarning ?? "$planName saved as your daily plan.";
+
+      _showMessage(message);
     } catch (error) {
+      if (!mounted) return;
+
       _showMessage("Failed to save the selected plan: $error");
     } finally {
       if (mounted) {
@@ -361,7 +505,13 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
     final unscheduledCount =
         (result["unscheduled_task_count"] as num?)?.toInt() ?? 0;
 
-    final totalRelevantTasks = scheduledCount + unscheduledCount;
+    final notConsideredCount =
+        (result["not_considered_task_count"] as num?)?.toInt() ??
+        (result["not_considered_tasks"] as List<dynamic>?)?.length ??
+        0;
+
+    final totalCandidateTasks =
+        scheduledCount + unscheduledCount + notConsideredCount;
 
     final utilization =
         (result["utilization_percentage"] as num?)?.toDouble() ?? 0.0;
@@ -407,7 +557,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
             const SizedBox(height: 8),
 
             Text(
-              "$scheduledCount of $totalRelevantTasks tasks scheduled",
+              "$scheduledCount of $totalCandidateTasks candidate tasks scheduled",
               style: const TextStyle(color: Colors.white70, fontSize: 14),
             ),
 
@@ -1367,8 +1517,9 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
 
           SizedBox(
             width: double.infinity,
+            height: 48,
             child: ElevatedButton.icon(
-              onPressed: isApplyingPlan
+              onPressed: isApplyingPlan || isGenerating
                   ? null
                   : () {
                       _applyGeneratedPlan(
@@ -1376,15 +1527,31 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                         planName: "Recommended plan",
                       );
                     },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurpleAccent,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.deepPurpleAccent.withOpacity(
+                  0.30,
+                ),
+                disabledForegroundColor: Colors.white60,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
               icon: isApplyingPlan
                   ? const SizedBox(
-                      width: 17,
-                      height: 17,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
-                  : const Icon(Icons.check_circle_outline_rounded),
+                  : const Icon(Icons.check_circle_outline_rounded, size: 20),
               label: Text(
-                isApplyingPlan ? "Saving..." : "Use Recommended Plan",
+                isApplyingPlan ? "Saving your plan..." : "Use Recommended Plan",
+                style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),
           ),
@@ -1796,8 +1963,10 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                   SizedBox(
                     width: double.infinity,
                     height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: isGenerating ? null : _generatePlan,
+                    child: ElevatedButton(
+                      onPressed: isGenerating || isApplyingPlan
+                          ? null
+                          : _generatePlan,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.deepPurpleAccent,
                         foregroundColor: Colors.white,
@@ -1809,23 +1978,39 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      icon: isGenerating
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        switchInCurve: Curves.easeOut,
+                        switchOutCurve: Curves.easeIn,
+                        child: Row(
+                          key: ValueKey<String>(_generationStatus),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (isGenerating) ...[
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               ),
-                            )
-                          : const Icon(Icons.auto_awesome_rounded, size: 20),
-                      label: Text(
-                        isGenerating
-                            ? "Creating your plan..."
-                            : "Generate My Plan",
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                              const SizedBox(width: 10),
+                            ] else ...[
+                              const Icon(Icons.auto_awesome_rounded, size: 20),
+                              const SizedBox(width: 8),
+                            ],
+                            Flexible(
+                              child: Text(
+                                _generationStatus,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

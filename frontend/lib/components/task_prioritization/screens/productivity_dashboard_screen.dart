@@ -2,9 +2,29 @@ import 'package:fl_chart/fl_chart.dart';
 import '../services/productivity_analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'daily_reflection_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class ProductivityDashboardScreen extends StatelessWidget {
+class ProductivityDashboardScreen extends StatefulWidget {
   const ProductivityDashboardScreen({super.key});
+
+  @override
+  State<ProductivityDashboardScreen> createState() =>
+      _ProductivityDashboardScreenState();
+}
+
+class _ProductivityDashboardScreenState
+    extends State<ProductivityDashboardScreen> {
+  late final Stream<Map<String, dynamic>> _dashboardStream;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _dashboardStream = FirebaseFirestore.instance
+        .collection('tasks')
+        .snapshots()
+        .asyncMap((_) => fetchDashboardData());
+  }
 
   Future<Map<String, dynamic>> fetchDashboardData() async {
     final service = ProductivityAnalyticsService();
@@ -242,12 +262,41 @@ class ProductivityDashboardScreen extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                value,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 1800),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final slideAnimation = Tween<Offset>(
+                    begin: const Offset(0, 0.22),
+                    end: Offset.zero,
+                  ).animate(animation);
+
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: slideAnimation,
+                      child: child,
+                    ),
+                  );
+                },
+                layoutBuilder: (currentChild, previousChildren) {
+                  return Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      ...previousChildren,
+                      if (currentChild != null) currentChild,
+                    ],
+                  );
+                },
+                child: Text(
+                  value,
+                  key: ValueKey<String>("$title-$value"),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               const SizedBox(height: 4),
@@ -285,17 +334,85 @@ class ProductivityDashboardScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: (pts / maxPts).clamp(0.0, 1.0),
-              minHeight: 5,
-              backgroundColor: Colors.white12,
-              valueColor: AlwaysStoppedAnimation(color),
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(
+              begin: 0.0,
+              end: (pts / maxPts).clamp(0.0, 1.0),
             ),
+            duration: const Duration(milliseconds: 1800),
+            curve: Curves.easeInOutCubic,
+            builder: (context, animatedProgress, child) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: animatedProgress,
+                  minHeight: 6,
+                  backgroundColor: Colors.white12,
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              );
+            },
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAnimatedScoreRing({
+    required double score,
+    required bool showScore,
+  }) {
+    final targetScore = showScore ? score.clamp(0.0, 100.0).toDouble() : 0.0;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: targetScore),
+      duration: const Duration(milliseconds: 1800),
+      curve: Curves.easeInOutCubic,
+      builder: (context, animatedScore, child) {
+        return SizedBox(
+          width: 124,
+          height: 124,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 124,
+                height: 124,
+                child: CircularProgressIndicator(
+                  value: animatedScore / 100,
+                  strokeWidth: 10,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    showScore ? animatedScore.round().toString() : "—",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 34,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    "/100",
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -320,8 +437,8 @@ class ProductivityDashboardScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: fetchDashboardData(),
+      body: StreamBuilder<Map<String, dynamic>>(
+        stream: _dashboardStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -455,57 +572,9 @@ class ProductivityDashboardScreen extends StatelessWidget {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          SizedBox(
-                            width: 124,
-                            height: 124,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                SizedBox(
-                                  width: 124,
-                                  height: 124,
-                                  child: CircularProgressIndicator(
-                                    value: hasActivity && hasActionableTasks
-                                        ? (score / 100).clamp(0.0, 1.0)
-                                        : 0,
-                                    strokeWidth: 10,
-                                    backgroundColor: Colors.white.withOpacity(
-                                      0.18,
-                                    ),
-                                    valueColor:
-                                        const AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
-                                  ),
-                                ),
-
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      hasActivity && hasActionableTasks
-                                          ? score.round().toString()
-                                          : "—",
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 34,
-                                        height: 1,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    const Text(
-                                      "/100",
-                                      style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                          _buildAnimatedScoreRing(
+                            score: score,
+                            showScore: hasActivity && hasActionableTasks,
                           ),
 
                           const SizedBox(width: 20),
@@ -618,7 +687,7 @@ class ProductivityDashboardScreen extends StatelessWidget {
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
-                  childAspectRatio: 1.15,
+                  childAspectRatio: 1.0,
                   children: [
                     buildModernCard(
                       title: "Completion Rate",

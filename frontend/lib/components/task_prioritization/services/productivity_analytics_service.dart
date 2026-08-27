@@ -110,30 +110,52 @@ class ProductivityAnalyticsService {
     final completedAt = _parseDate(task['completed_at']);
     final scheduleDate = _parseDate(task['schedule_date']);
     final scheduledStart = _parseDate(task['scheduled_start']);
+    final availableFrom = _parseDate(task['available_from']);
 
     final startOfDay = DateTime(day.year, day.month, day.day);
 
-    // A task completed before this day should not appear
-    // as pending or due on this historical day.
-    final completedBeforeDay =
-        completedAt != null && completedAt.isBefore(startOfDay);
+    final endOfDay = DateTime(day.year, day.month, day.day, 23, 59, 59, 999);
 
-    final dueToday = deadline != null && _isSameDay(deadline, day);
+    final now = DateTime.now();
+    final isToday = _isSameDay(day, now);
+
+    final status = (task['status'] ?? 'pending').toString().toLowerCase();
 
     final completedToday = completedAt != null && _isSameDay(completedAt, day);
+
+    // Always attribute completion to the day on which it happened.
+    if (completedToday) {
+      return true;
+    }
+
+    // A completed task must not appear as pending on another day.
+    if (status == 'completed' || completedAt != null) {
+      return false;
+    }
+
+    final dueToday = deadline != null && _isSameDay(deadline, day);
 
     final scheduledToday =
         (scheduleDate != null && _isSameDay(scheduleDate, day)) ||
         (scheduledStart != null && _isSameDay(scheduledStart, day));
 
-    if (completedToday) {
-      return true;
+    if (isToday) {
+      // Include every pending task that has already become available
+      // or will become available later today.
+      //
+      // This allows unscheduled active tasks to appear in today's
+      // dashboard even when their deadline is on a future day.
+      final availableByEndOfToday =
+          availableFrom == null || !availableFrom.isAfter(endOfDay);
+
+      // Also retain overdue pending tasks.
+      final overdue = deadline != null && deadline.isBefore(startOfDay);
+
+      return availableByEndOfToday || dueToday || scheduledToday || overdue;
     }
 
-    if (completedBeforeDay) {
-      return false;
-    }
-
+    // Keep historical analytics conservative:
+    // use tasks due, scheduled or completed on that historical day.
     return dueToday || scheduledToday;
   }
 
@@ -231,14 +253,21 @@ class ProductivityAnalyticsService {
 
       final availableFrom = _parseDate(task['available_from']);
 
-      // Historical days are finalized, so every relevant task is scored.
-      // For today, only completed tasks or tasks that have become
-      // available are included in the live score.
+      final isSnoozed = task['is_snoozed'] == true;
+
+      final snoozedUntil = _parseDate(task['snoozed_until']);
+
+      final currentlySnoozed =
+          isToday &&
+          isSnoozed &&
+          snoozedUntil != null &&
+          snoozedUntil.isAfter(now);
+
+      final hasBecomeAvailable =
+          availableFrom == null || !availableFrom.isAfter(now);
+
       final isActionable =
-          !isToday ||
-          isCompleted ||
-          availableFrom == null ||
-          !availableFrom.isAfter(now);
+          !isToday || isCompleted || (hasBecomeAvailable && !currentlySnoozed);
 
       if (isCompleted) {
         completed++;
@@ -313,9 +342,11 @@ class ProductivityAnalyticsService {
 
     double behaviourScore = 0.0;
 
-    if (totalScoredTasks > 0) {
-      final behaviourEvents = snoozes + postpones;
+    final behaviourEvents = snoozes + postpones;
 
+    final hasExecutionEvidence = completed > 0 || behaviourEvents > 0;
+
+    if (totalScoredTasks > 0 && hasExecutionEvidence) {
       final penalty = behaviourEvents / (totalScoredTasks * 2);
 
       behaviourScore = (1.0 - penalty).clamp(0.0, 1.0);
