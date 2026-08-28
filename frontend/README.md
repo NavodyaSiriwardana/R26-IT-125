@@ -1,4 +1,4 @@
-# r26_frontend
+# frontend
 
 A new Flutter project.
 

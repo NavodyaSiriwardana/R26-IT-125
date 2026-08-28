@@ -23,20 +23,11 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -51,19 +42,46 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyCqtL6J5IJcihs78BkX3QG_7Fj4ilxAsbk',
+    appId: '1:765224709282:web:829c943704eba02eca7bfb',
+    messagingSenderId: '765224709282',
+    projectId: 'intelligent-diary-r26-125',
+    authDomain: 'intelligent-diary-r26-125.firebaseapp.com',
+    storageBucket: 'intelligent-diary-r26-125.firebasestorage.app',
+    measurementId: 'G-HHPP0CTN8G',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyAMborNrerB7OF_KsacweZ4YmjrxiQcsic',
+    appId: '1:765224709282:android:1155fcc07c6983caca7bfb',
+    messagingSenderId: '765224709282',
+    projectId: 'intelligent-diary-r26-125',
+    storageBucket: 'intelligent-diary-r26-125.firebasestorage.app',
+  );
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyBQGHB7ZKNeZ904bDJk9oXUxr34tmDG4M0',
+    appId: '1:765224709282:ios:f0bab519a888dc83ca7bfb',
+    messagingSenderId: '765224709282',
+    projectId: 'intelligent-diary-r26-125',
+    storageBucket: 'intelligent-diary-r26-125.firebasestorage.app',
+    iosBundleId: 'com.example.frontend',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyBQGHB7ZKNeZ904bDJk9oXUxr34tmDG4M0',
+    appId: '1:765224709282:ios:f0bab519a888dc83ca7bfb',
+    messagingSenderId: '765224709282',
+    projectId: 'intelligent-diary-r26-125',
+    storageBucket: 'intelligent-diary-r26-125.firebasestorage.app',
+    iosBundleId: 'com.example.frontend',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyCqtL6J5IJcihs78BkX3QG_7Fj4ilxAsbk',
     appId: '1:765224709282:web:3bda23c87adfc1a3ca7bfb',
     messagingSenderId: '765224709282',
     projectId: 'intelligent-diary-r26-125',
     authDomain: 'intelligent-diary-r26-125.firebaseapp.com',
     storageBucket: 'intelligent-diary-r26-125.firebasestorage.app',
     measurementId: 'G-WH9CZPHMHE',
-  );
-
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAMborNrerB7OF_KsacweZ4YmjrxiQcsic',
-    appId: '1:765224709282:android:c573c563c349288cca7bfb',
-    messagingSenderId: '765224709282',
-    projectId: 'intelligent-diary-r26-125',
-    storageBucket: 'intelligent-diary-r26-125.firebasestorage.app',
   );
 }

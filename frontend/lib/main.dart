@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-import 'components/temporal_causal_patterns/screens/login_screen.dart';
 
-void main() async {
+import 'components/task_prioritization/screens/main_navigation_screen.dart';
+import 'components/task_prioritization/services/notification_service.dart';
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await NotificationService.instance.initialize();
+
+  await NotificationService.instance.requestPermissions();
+
   runApp(const MyApp());
 }
 
@@ -17,19 +23,15 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Intelligent Diary',
       debugShowCheckedModeBanner: false,
+
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0D0D1A),
-        primaryColor: const Color(0xFF7B61FF),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF7B61FF),
-          secondary: Color(0xFF1DB954),
-          surface: Color(0xFF13132A),
-        ),
+        scaffoldBackgroundColor: const Color(0xFF081028),
+        fontFamily: 'Roboto',
       ),
-      home: const LoginScreen(),
+
+      home: const MainNavigationScreen(),
     );
   }
 }

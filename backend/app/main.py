@@ -1,14 +1,27 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import neo4j_conn
 from app.components.temporal_causal_patterns.graph_builder import graph_builder
 from app.routes import api_router
+from app.routes.task_routes import router as task_router
+
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
 )
+
+# Development configuration for Flutter Web and mobile testing
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # ─────────────────────────────────────────────
 # STARTUP EVENT
@@ -40,6 +53,19 @@ async def shutdown_event():
 # ─────────────────────────────────────────────
 
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(task_router)
+
+
+# ─────────────────────────────────────────────
+# ROOT
+# ─────────────────────────────────────────────
+
+@app.get("/")
+def root():
+    return {
+        "application": "Intelligent Diary API",
+        "status": "running",
+    }
 
 
 # ─────────────────────────────────────────────
