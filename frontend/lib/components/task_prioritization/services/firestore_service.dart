@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/task_model.dart';
 import '../services/task_api_service.dart';
 
@@ -7,6 +8,16 @@ import '../services/notification_service.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  String _requireCurrentUserId() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('No authenticated user is currently signed in.');
+    }
+
+    return user.uid;
+  }
 
   Future<void> _cancelTaskNotificationsSafely(String taskId) async {
     try {
@@ -60,14 +71,27 @@ class FirestoreService {
   // screen) can reliably find THIS exact task after a rerankAllTasks()
   // call, instead of guessing by title/deadline matching.
   Future<String> addTask({required Map<String, dynamic> task}) async {
-    final docRef = await _firestore.collection('tasks').add(task);
+    final userId = _requireCurrentUserId();
+
+    final docRef = await _firestore.collection('tasks').add({
+      ...task,
+      'userId': userId,
+    });
+
     return docRef.id;
   }
 
   // ── Stream all tasks ordered by pred_score ────────────────────────────────
   Stream<List<TaskModel>> getTasks() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return Stream<List<TaskModel>>.value([]);
+    }
+
     return _firestore
         .collection('tasks')
+        .where('userId', isEqualTo: user.uid)
         .orderBy('pred_score', descending: true)
         .snapshots()
         .map((snapshot) {
@@ -81,8 +105,11 @@ class FirestoreService {
   // Used by the form screen right after re-ranking, to find the newly added
   // task's final priority/reason_tags for the success dialog.
   Future<List<Map<String, dynamic>>> getAllTasksRaw() async {
+    final userId = _requireCurrentUserId();
+
     final snapshot = await _firestore
         .collection('tasks')
+        .where('userId', isEqualTo: userId)
         .orderBy('pred_score', descending: true)
         .get();
 
@@ -331,8 +358,11 @@ class FirestoreService {
   }
 
   Future<int> markMissedSchedules() async {
+    final userId = _requireCurrentUserId();
+
     final snapshot = await _firestore
         .collection('tasks')
+        .where('userId', isEqualTo: userId)
         .where('schedule_status', isEqualTo: 'scheduled')
         .get();
 
@@ -381,17 +411,12 @@ class FirestoreService {
   }
 
   Future<void> rerankAllTasks() async {
-    // Snoozed tasks are excluded from ranking — "snooze" means "don't show
-    // or compare me right now." They rejoin the pool automatically once
-    // unsnoozeTask() runs (either manually, or via the auto-unsnooze check
-    // in task_list_screen.dart when snoozed_until passes).
-    //
-    // ⚠️ This is a compound query (status == 'pending' AND is_snoozed ==
-    // false). Firestore may prompt you to create a composite index the
-    // first time this runs — if so, click the link in the error/console,
-    // it's a one-time setup step, not a bug.
+    final userId = _requireCurrentUserId();
+
+    // Snoozed tasks are excluded from ranking.
     final snapshot = await _firestore
         .collection('tasks')
+        .where('userId', isEqualTo: userId)
         .where('status', isEqualTo: 'pending')
         .where('is_snoozed', isEqualTo: false)
         .get();
@@ -566,8 +591,11 @@ class FirestoreService {
   }
 
   Future<List<Map<String, dynamic>>> getSchedulableTasksRaw() async {
+    final userId = _requireCurrentUserId();
+
     final snapshot = await _firestore
         .collection('tasks')
+        .where('userId', isEqualTo: userId)
         .where('status', isEqualTo: 'pending')
         .where('is_snoozed', isEqualTo: false)
         .get();
