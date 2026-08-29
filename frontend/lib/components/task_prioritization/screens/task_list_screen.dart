@@ -8,6 +8,9 @@ import 'package:intl/intl.dart';
 
 import 'notification_preferences_screen.dart';
 
+import '../../temporal_causal_patterns/services/auth_service.dart';
+import '../../temporal_causal_patterns/screens/login_screen.dart';
+
 class TaskListScreen extends StatefulWidget {
   final ValueNotifier<String?> taskToReveal;
 
@@ -36,6 +39,54 @@ class _TaskListScreenState extends State<TaskListScreen> {
   final Set<String> _busyTaskIds = <String>{};
 
   final Set<String> _expiredSnoozeUpdatesInProgress = <String>{};
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF172235),
+          title: const Text('Log out?'),
+          content: const Text(
+            'Are you sure you want to log out of Intelligent Diary?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('Log out'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await AuthService.logout();
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => LoginScreen()),
+        (route) => false,
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to log out: $error'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
 
   GlobalKey _taskCardKey(String taskId) {
     return _taskCardKeys.putIfAbsent(taskId, GlobalKey.new);
@@ -390,6 +441,11 @@ class _TaskListScreenState extends State<TaskListScreen> {
                 ),
               );
             },
+          ),
+          IconButton(
+            tooltip: 'Log out',
+            onPressed: _confirmLogout,
+            icon: const Icon(Icons.logout_rounded),
           ),
           const SizedBox(width: 6),
         ],
