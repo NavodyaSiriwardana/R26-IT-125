@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
-import 'components/task_prioritization/screens/main_navigation_screen.dart';
 import 'components/task_prioritization/services/notification_service.dart';
+import 'components/temporal_causal_patterns/screens/login_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +31,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Roboto',
       ),
 
-      home: const MainNavigationScreen(),
+      home: const LoginScreen(),
     );
   }
 }

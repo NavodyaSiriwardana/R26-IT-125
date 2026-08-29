@@ -4,7 +4,7 @@ import '../models/pattern_model.dart';
 import 'local_storage.dart';
 
 class PatternService {
-  static const String baseUrl = 'http://192.168.8.154:8000';
+  static const String baseUrl = 'http://10.130.10.139:8000';
 
   static Future<List<PatternModel>> analysePatterns(
       String userId) async {

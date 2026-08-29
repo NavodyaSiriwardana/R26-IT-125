@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import '../services/local_storage.dart';
 import 'register_screen.dart';
 import 'new_entry_screen.dart';
+import 'task_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -28,7 +29,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (loggedIn && mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => NewEntryScreen()),
+       MaterialPageRoute(builder: (_) => const TaskSelectionScreen()),
       );
     }
   }
@@ -51,7 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (success && mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const NewEntryScreen()),
+       MaterialPageRoute(builder: (_) => const TaskSelectionScreen()),
       );
     } else {
       setState(() => _error = 'Invalid email or password');
