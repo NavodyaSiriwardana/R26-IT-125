@@ -608,9 +608,8 @@ class _ProductivityDashboardScreenState
                                       ? "Add or begin a task to generate today's score."
                                       : !hasActionableTasks
                                       ? "Your scheduled tasks will become actionable later."
-                                      : "Based on ${stats.actionableTasks} "
-                                            "actionable "
-                                            "${stats.actionableTasks == 1 ? "task" : "tasks"} today.",
+                                      : "Based on ${stats.actionableTasks} evaluated "
+                                            "${stats.actionableTasks == 1 ? "task" : "tasks"} so far.",
                                   style: const TextStyle(
                                     color: Colors.white70,
                                     fontSize: 12,
