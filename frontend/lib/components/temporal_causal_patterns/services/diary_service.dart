@@ -5,7 +5,7 @@ import '../models/diary_entry_model.dart';
 import 'local_storage.dart';
 
 class DiaryService {
-  static const String baseUrl = 'http:// 172.20.136.139:8000';
+  static const String baseUrl = 'http://10.14.35.139:8000';
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   static Future<bool> submitEntry(DiaryEntryModel entry) async {
