@@ -1,10 +1,10 @@
 from fastapi import APIRouter
-from schemas.request import BiasAnalysisRequest
-from services.orchestrator import BiasDetectionOrchestrator
-from services.reflection_bot import ReflectionBot
-from services.firebase_service import FirebaseService
-from services.facial_service import analyze_facial_expression
-from services.diary_entry_mapper import map_leader_entry
+from app.components.self_bias_identification.schemas.request import BiasAnalysisRequest
+from app.components.self_bias_identification.services.orchestrator import BiasDetectionOrchestrator
+from app.components.self_bias_identification.services.reflection_bot import ReflectionBot
+from app.components.self_bias_identification.services.firebase_service import FirebaseService
+from app.components.self_bias_identification.services.facial_service import analyze_facial_expression
+from app.components.self_bias_identification.services.diary_entry_mapper import map_leader_entry
 
 router = APIRouter()
 orchestrator = BiasDetectionOrchestrator()

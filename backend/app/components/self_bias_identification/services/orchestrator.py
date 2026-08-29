@@ -1,6 +1,6 @@
-from services.comparator import MultiSignalComparator
-from services.classifier import BiasClassifier
-from services.pas_calculator import PASCalculator
+from app.components.self_bias_identification.services.comparator import MultiSignalComparator
+from app.components.self_bias_identification.services.classifier import BiasClassifier
+from app.components.self_bias_identification.services.pas_calculator import PASCalculator
 
 
 class BiasDetectionOrchestrator:

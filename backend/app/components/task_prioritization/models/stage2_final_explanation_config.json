@@ -1,0 +1,31 @@
+{
+  "method": "query-centred contrastive TreeSHAP",
+  "reference": "mean SHAP contribution within the current task query",
+  "maximum_reason_tags": 2,
+  "predicted_ranks_1_2": "show strongest factors raising relative position",
+  "predicted_ranks_3_4": "show strongest factors reducing relative position",
+  "correlated_feature_grouping": {
+    "timing": [
+      "deadline_hours",
+      "time_pressure",
+      "urgency"
+    ],
+    "student_judgement": [
+      "importance_score",
+      "severity"
+    ],
+    "effort": [
+      "cognitive_load",
+      "energy_level",
+      "task_duration"
+    ],
+    "availability_context": [
+      "time_of_day"
+    ]
+  },
+  "excluded_from_user_facing_tags": [
+    "category",
+    "day_of_week"
+  ],
+  "score_interpretation": "relative rank contribution, not causation"
+}

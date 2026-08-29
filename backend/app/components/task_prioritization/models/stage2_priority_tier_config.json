@@ -1,0 +1,28 @@
+{
+  "score_name": "calibrated_priority_score",
+  "score_range": {
+    "minimum": 0.0,
+    "maximum": 100.0
+  },
+  "interpretation": "Estimated relative-priority score. Not a probability.",
+  "calibration_method": "isotonic regression",
+  "threshold_derivation": "Midpoints between normalized relevance labels 0, 1, 2 and 3.",
+  "tiers": {
+    "Critical": {
+      "minimum_inclusive": 83.33333333333333,
+      "maximum_inclusive": 100.0
+    },
+    "High": {
+      "minimum_inclusive": 50.0,
+      "maximum_exclusive": 83.33333333333333
+    },
+    "Medium": {
+      "minimum_inclusive": 16.666666666666668,
+      "maximum_exclusive": 50.0
+    },
+    "Low": {
+      "minimum_inclusive": 0.0,
+      "maximum_exclusive": 16.666666666666668
+    }
+  }
+}

@@ -1,18 +1,70 @@
-import firebase_admin
-from firebase_admin import credentials, firestore
-import os
-from dotenv import load_dotenv
+from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, AuthError
+from app.config import settings
+from app.firebase.firebase_client import get_firestore_client
 
-load_dotenv()
-
-cred_path = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "firebase_credentials.json"
-)
-
-if not firebase_admin._apps:
-    cred = credentials.Certificate(cred_path)
-    firebase_admin.initialize_app(cred)
-
-db = firestore.client()
+# Firestore — shared across every component (self_bias_identification,
+# rag_summary, dashboard, ...). Routed through app.firebase.firebase_client
+# so Firebase is only ever initialized once; calling
+# firebase_admin.initialize_app() a second time directly here (the old
+# self_bias_identification-only approach) would raise "app already exists"
+# once merged alongside components that already call it.
+db = get_firestore_client()
 print("Firebase connected!")
+
+
+class Neo4jConnection:
+    def __init__(self):
+        self._driver = None
+        self._connect()
+
+    def _connect(self):
+        try:
+            self._driver = GraphDatabase.driver(
+                settings.NEO4J_URI,
+                auth=(settings.NEO4J_USERNAME, settings.NEO4J_PASSWORD),
+                max_connection_lifetime=200,
+                max_connection_pool_size=50,
+                connection_acquisition_timeout=30,
+            )
+            print("[Neo4j] Driver created successfully")
+        except AuthError:
+            print("[Neo4j] ERROR: Invalid credentials")
+        except Exception as e:
+            print(f"[Neo4j] ERROR: {e}")
+
+    def get_session(self):
+        try:
+            return self._driver.session(
+                database=settings.NEO4J_DATABASE
+            )
+        except Exception:
+            print("[Neo4j] Session failed — reconnecting...")
+            self._connect()
+            return self._driver.session(
+                database=settings.NEO4J_DATABASE
+            )
+
+    def verify_connection(self):
+        try:
+            with self.get_session() as session:
+                result = session.run(
+                    "RETURN 'Neo4j AuraDB connected successfully' AS message"
+                )
+                message = result.single()["message"]
+                print(f"[Neo4j] {message}")
+                return message
+        except ServiceUnavailable:
+            print("[Neo4j] ERROR: Database unavailable")
+            return None
+        except Exception as e:
+            print(f"[Neo4j] ERROR: {e}")
+            return None
+
+    def close(self):
+        if self._driver:
+            self._driver.close()
+            print("[Neo4j] Connection closed")
+
+
+neo4j_conn = Neo4jConnection()

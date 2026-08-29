@@ -1,23 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/components/self_bias_identification/screens/login_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
-void main() {
-  runApp(const TruthLensApp());
+import 'components/task_prioritization/services/notification_service.dart';
+import 'components/temporal_causal_patterns/screens/login_screen.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await NotificationService.instance.initialize();
+
+  await NotificationService.instance.requestPermissions();
+
+  runApp(const MyApp());
 }
 
-class TruthLensApp extends StatelessWidget {
-  const TruthLensApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'TruthLens',
+
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0D1117),
-        colorScheme: const ColorScheme.dark(primary: Color(0xFF534AB7)),
+        scaffoldBackgroundColor: const Color(0xFF081028),
+        fontFamily: 'Roboto',
       ),
+
       home: const LoginScreen(),
     );
   }

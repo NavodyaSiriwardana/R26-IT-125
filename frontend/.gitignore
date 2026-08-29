@@ -10,6 +10,7 @@ build/
 .env.local
 .env.*.local
 
+*.bin
 # Android generated files
 android/.gradle/
 android/local.properties

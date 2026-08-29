@@ -1,30 +1,51 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-starlette==0.27.0
-anyio==3.7.1
-pydantic==2.5.0
-pydantic_core==2.14.1
-python-dotenv==1.2.2
+fastapi==0.128.8
+uvicorn==0.39.0
+starlette==0.49.3
+pydantic==2.13.3
+pydantic_core==2.46.3
+pydantic-settings
+anyio==4.12.1
+python-dotenv==1.2.1
+annotated-doc==0.0.4
 annotated-types==0.7.0
-click==8.4.2
+click==8.1.8
 colorama==0.4.6
+exceptiongroup==1.3.1
 h11==0.16.0
-idna==3.11
+idna==3.13
+typing-inspection==0.4.2
 typing_extensions==4.15.0
 
-firebase_admin==7.4.0
+firebase-admin==7.4.0
 
+# Neo4j database driver (temporal_causal_patterns)
+neo4j==5.19.0
+
+# Graph algorithms - Louvain community detection (temporal_causal_patterns)
+networkx==3.2.1
+python-louvain==0.16
+
+# Shared ML/data stack (self_bias_identification + task_prioritization)
 xgboost==3.2.0
-scikit-learn==1.8.0
+scikit-learn==1.9.0
 numpy==2.4.2
-pandas==3.0.1
+pandas==3.0.5
 joblib==1.5.3
+shap==0.51.0
 
+# Task prioritization - scheduling & LLM
+ortools==9.15.6755
+groq==1.4.0
+chromadb
+sentence-transformers
+sentencepiece
+bert-score
+
+# self_bias_identification - facial emotion analysis
 torch==2.13.0
 transformers==5.15.0
 pillow==12.1.1
-
-anthropic==0.97.0
-
 mediapipe==1.0.1
 opencv-contrib-python==5.0.0.93
+
+anthropic==0.97.0
