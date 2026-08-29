@@ -15,6 +15,7 @@ import '../widgets/task_outcome_chips.dart';
 import 'my_patterns_screen.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
+import '../../rag_summary/screens/Activity_dashboard_screen.dart';
 
 class NewEntryScreen extends StatefulWidget {
   const NewEntryScreen({super.key});
@@ -250,6 +251,8 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
           ),
         ),
         actions: [
+            
+
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text(
@@ -307,6 +310,29 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
           ),
         ),
         actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ActivityDashboard(),
+                ),
+              );
+            },
+            icon: const Icon(
+              Icons.dashboard_outlined,
+              size: 14,
+              color: Color(0xFF1DB954),
+            ),
+            label: const Text(
+              'Dashboard',
+              style: TextStyle(
+                color: Color(0xFF1DB954),
+                fontSize: 12,
+              ),
+            ),
+          ),
+          
           TextButton.icon(
             onPressed: () {
               Navigator.push(

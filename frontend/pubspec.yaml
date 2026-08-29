@@ -47,6 +47,9 @@ dependencies:
   flutter_timezone: ^5.1.0
   shared_preferences: ^2.5.5
   firebase_auth: ^5.7.0
+  pdf: ^3.12.0
+  printing: ^5.14.3
+  dio: ^5.11.0
 
 dev_dependencies:
   flutter_test:
