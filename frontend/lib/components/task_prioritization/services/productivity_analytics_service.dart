@@ -263,6 +263,19 @@ class ProductivityAnalyticsService {
           snoozedUntil != null &&
           snoozedUntil.isAfter(now);
 
+      final snoozeEventsToday = _countEventsForDay(task['snooze_history'], day);
+
+      final postponeEventsToday = _countEventsForDay(
+        task['postpone_history'],
+        day,
+      );
+
+      snoozes += snoozeEventsToday;
+      postpones += postponeEventsToday;
+
+      final hasBehaviourEventToday =
+          snoozeEventsToday > 0 || postponeEventsToday > 0;
+
       final hasBecomeAvailable =
           availableFrom == null || !availableFrom.isAfter(now);
 
@@ -274,14 +287,21 @@ class ProductivityAnalyticsService {
       } else {
         pending++;
 
-        if (isActionable) {
+        if (currentlySnoozed) {
+          // Currently snoozed tasks are neither actionable nor genuinely upcoming.
+        } else if (isActionable) {
           actionablePending++;
         } else {
           upcoming++;
         }
       }
 
-      if (isActionable) {
+      // A task that was actionable and then snoozed or postponed today
+      // must remain in today's scoring cohort. Otherwise, disrupting a
+      // task could incorrectly improve the productivity score.
+      final isScoreEligible = isActionable || hasBehaviourEventToday;
+
+      if (isScoreEligible) {
         scoredTasks.add(task);
 
         final priorityWeight = _priorityWeight(task);
@@ -299,16 +319,12 @@ class ProductivityAnalyticsService {
             highPriorityCompleted++;
           }
         }
-
-        snoozes += _countEventsForDay(task['snooze_history'], day);
-
-        postpones += _countEventsForDay(task['postpone_history'], day);
       }
 
       final deadline = _parseDate(task['deadline']);
 
       if (isCompleted) {
-        if (deadline != null && completedAt != null) {
+        if (deadline != null) {
           if (completedAt.isAfter(deadline)) {
             completedLate++;
           } else {
@@ -386,7 +402,7 @@ class ProductivityAnalyticsService {
       completedLate: completedLate,
       overduePending: overduePending,
 
-      // Includes completed tasks and actionable pending tasks.
+      // Includes completed, currently actionable, and tasks disrupted today.
       actionableTasks: totalScoredTasks,
       actionablePending: actionablePending,
       upcoming: upcoming,
