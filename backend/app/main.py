@@ -1,19 +1,29 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import neo4j_conn
+
+
+from app.routes.task_routes import router as task_router
+from app.firebase.firebase_client import initialize_firebase
 from app.components.temporal_causal_patterns.graph_builder import graph_builder
 from app.routes import api_router
-from app.routes.task_routes import router as task_router
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    initialize_firebase()
+    yield
 
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
+    lifespan=lifespan,
 )
 
-# Development configuration for Flutter Web and mobile testing
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,8 +31,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
 # ─────────────────────────────────────────────
 # STARTUP EVENT
 # ─────────────────────────────────────────────

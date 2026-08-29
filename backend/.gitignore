@@ -7,6 +7,8 @@ venv/
 .env.local
 .env.*.local
 
+app/firebase/firebase-service-account.json
+
 # Python cache files
 __pycache__/
 **/__pycache__/
@@ -14,10 +16,15 @@ __pycache__/
 *.pyo
 *.pyd
 
+*.bin
 # Python build files
 build/
 dist/
 *.egg-info/
+
+*.sqlite3
+chroma.sqlite3
+chroma_db
 
 # Testing / coverage
 .pytest_cache/
