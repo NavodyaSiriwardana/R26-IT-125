@@ -1,6 +1,9 @@
+import os
 from transformers import pipeline
 from PIL import Image
 import mediapipe as mp
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 import numpy as np
 import io
 import base64
@@ -11,14 +14,31 @@ emotion_classifier = pipeline(
     model="dima806/facial_emotions_image_detection"
 )
 
-mp_face_detection = mp.solutions.face_detection
-face_detector = mp_face_detection.FaceDetection(
-    model_selection=0, min_detection_confidence=0.6
+# Tasks API replaces the legacy mp.solutions.* API removed in mediapipe>=0.10.30
+# (see STUDY_CATEGORIES-style comment in comparator.py history — this swap was
+# required to unblock numpy>=2, which shap/ortools in this shared backend need
+# and the old mp.solutions.* build could never support).
+_MODELS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "ml_models", "mediapipe_models",
 )
 
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    static_image_mode=True, max_num_faces=1, min_detection_confidence=0.6
+_face_detector = mp_vision.FaceDetector.create_from_options(
+    mp_vision.FaceDetectorOptions(
+        base_options=mp_python.BaseOptions(
+            model_asset_path=os.path.join(_MODELS_DIR, "blaze_face_short_range.tflite")
+        ),
+        min_detection_confidence=0.6,
+    )
+)
+
+_face_landmarker = mp_vision.FaceLandmarker.create_from_options(
+    mp_vision.FaceLandmarkerOptions(
+        base_options=mp_python.BaseOptions(
+            model_asset_path=os.path.join(_MODELS_DIR, "face_landmarker.task")
+        ),
+        num_faces=1,
+    )
 )
 
 
@@ -31,22 +51,24 @@ def is_image_blurry(image: Image.Image, threshold: float = 15.0) -> bool:
 def detect_and_crop_face(image: Image.Image):
     img_array = np.array(image.convert("RGB"))
     h, w, _ = img_array.shape
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_array)
 
-    results = face_detector.process(img_array)
+    results = _face_detector.detect(mp_image)
     if not results.detections:
         return None, False
 
+    # BoundingBox fields are already absolute pixel coordinates in the
+    # Tasks API (unlike the old relative_bounding_box, which was 0-1).
     detection = max(
-    results.detections,
-    key=lambda d: d.location_data.relative_bounding_box.width
-    * d.location_data.relative_bounding_box.height
-)
-    bbox = detection.location_data.relative_bounding_box
+        results.detections,
+        key=lambda d: d.bounding_box.width * d.bounding_box.height
+    )
+    bbox = detection.bounding_box
 
-    x = max(0, int(bbox.xmin * w))
-    y = max(0, int(bbox.ymin * h))
-    bw = int(bbox.width * w)
-    bh = int(bbox.height * h)
+    x = max(0, bbox.origin_x)
+    y = max(0, bbox.origin_y)
+    bw = bbox.width
+    bh = bbox.height
 
     margin_x = int(0.25 * bw)
     margin_y = int(0.25 * bh)
@@ -57,8 +79,8 @@ def detect_and_crop_face(image: Image.Image):
 
     cropped = img_array[y1:y2, x1:x2]
 
-    mesh_results = face_mesh.process(img_array)
-    landmarks_visible = mesh_results.multi_face_landmarks is not None
+    landmark_results = _face_landmarker.detect(mp_image)
+    landmarks_visible = len(landmark_results.face_landmarks) > 0
 
     return Image.fromarray(cropped), landmarks_visible
 

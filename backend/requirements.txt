@@ -41,11 +41,23 @@ sentence-transformers
 sentencepiece
 bert-score
 
+# Pinned explicitly: ortools requires protobuf 6.33.x, which is newer than
+# what some other packages resolve to on their own. mediapipe>=1.0.0 doesn't
+# declare a strict protobuf requirement but has been verified working with
+# this version (see self_bias_identification/services/facial_service.py).
+protobuf>=6.33.1,<6.34
+
 # self_bias_identification - facial emotion analysis
+# mediapipe>=1.0.0 is required here (not 0.10.x) because it's the only line
+# that supports numpy>=2 (needed by shap/ortools above) — 0.10.21 pins
+# numpy<2, and 0.10.30-0.10.35 lift that pin but already dropped the legacy
+# mp.solutions.* API. facial_service.py is written against the modern
+# mediapipe.tasks API instead, using downloaded .tflite/.task model assets
+# (see ml_models/mediapipe_models/).
 torch==2.13.0
 transformers==5.15.0
 pillow==12.1.1
-mediapipe==0.10.21
+mediapipe==1.0.1
 opencv-contrib-python==5.0.0.93
 
 anthropic==0.97.0
