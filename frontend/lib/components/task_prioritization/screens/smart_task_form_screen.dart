@@ -840,7 +840,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
       _snack(
         "Analysis complete. Review the results and provide the required inputs.",
-        color: Colors.deepPurpleAccent,
+        color: const Color(0xFF4C8DFF),
       );
     } catch (e) {
       _snack("Failed to analyze task: $e");
@@ -1177,7 +1177,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                 onPressed: () => Navigator.pop(context),
                 child: const Text(
                   "OK",
-                  style: TextStyle(color: Colors.deepPurpleAccent),
+                  style: TextStyle(color: const Color(0xFF4C8DFF)),
                 ),
               ),
             ],
@@ -1278,7 +1278,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                 const Icon(
                   Icons.circle,
                   size: 6,
-                  color: Colors.deepPurpleAccent,
+                  color: const Color(0xFF4C8DFF),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -1589,10 +1589,10 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                 ),
                 child: SwitchListTile(
                   value: isSplittable,
-                  activeThumbColor: Colors.deepPurpleAccent,
+                  activeThumbColor: const Color(0xFF4C8DFF),
                   secondary: const Icon(
                     Icons.call_split_rounded,
-                    color: Colors.deepPurpleAccent,
+                    color: const Color(0xFF4C8DFF),
                   ),
                   title: const Text(
                     "Allow task splitting",
@@ -1717,7 +1717,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                   labelText: "How long will this task take?",
                   prefixIcon: const Icon(
                     Icons.timer_outlined,
-                    color: Colors.deepPurpleAccent,
+                    color: const Color(0xFF4C8DFF),
                   ),
                   filled: true,
                   fillColor: const Color(0xFF1E293B),
@@ -1734,7 +1734,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: const BorderSide(
-                      color: Colors.deepPurpleAccent,
+                      color: const Color(0xFF4C8DFF),
                       width: 1.5,
                     ),
                   ),
@@ -1804,9 +1804,9 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _predicted
                       ? Colors.green.withValues(alpha: 0.30)
-                      : Colors.deepPurpleAccent,
+                      : const Color(0xFF4C8DFF),
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.deepPurpleAccent.withValues(
+                  disabledBackgroundColor: const Color(0xFF4C8DFF).withValues(
                     alpha: 0.40,
                   ),
                   disabledForegroundColor: Colors.white70,

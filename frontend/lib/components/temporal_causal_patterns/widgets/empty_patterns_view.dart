@@ -11,18 +11,28 @@ class EmptyPatternsView extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.auto_graph,
-              size: 64,
-              color: Color(0xFF2a2a3a),
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: const Color(0xFF7B61FF).withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: const Color(0xFF7B61FF).withValues(alpha: 0.2)),
+              ),
+              child: const Icon(
+                Icons.auto_graph_rounded,
+                size: 40,
+                color: Color(0xFF7B61FF),
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             const Text(
               'No patterns yet',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 18,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 10),

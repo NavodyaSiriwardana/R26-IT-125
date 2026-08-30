@@ -7,6 +7,9 @@ venv/
 .env.local
 .env.*.local
 
+# Firebase service account credentials
+firebase_credentials.json
+firebase_credentials_backup*.json
 app/firebase/firebase-service-account.json
 
 # Python cache files

@@ -100,13 +100,13 @@ class _MyPatternsScreenState extends State<MyPatternsScreen> {
         .length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D1A),
+      backgroundColor: const Color(0xFF0A0A16),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0D0D1A),
+        backgroundColor: const Color(0xFF0A0A16),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios,
-              color: Color(0xFF7B61FF), size: 18),
+          icon: const Icon(Icons.arrow_back_ios_rounded,
+              color: Color(0xFF9784FF), size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(
@@ -224,12 +224,22 @@ class _MyPatternsScreenState extends State<MyPatternsScreen> {
       String number, String label, Color color) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFF13132A),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: const Color(0xFF1e1e2e)),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [color.withValues(alpha: 0.10), const Color(0xFF13132A)],
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.12),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Column(
           children: [
@@ -237,16 +247,17 @@ class _MyPatternsScreenState extends State<MyPatternsScreen> {
               number,
               style: TextStyle(
                 color: color,
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               label,
               style: const TextStyle(
-                color: Color(0xFF5a5a7a),
-                fontSize: 10,
+                color: Color(0xFF8888AC),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],

@@ -30,30 +30,65 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-    
-  fl_chart: ^1.0.0
+
+  # Shared
   http: ^1.2.1
+  fl_chart: ^1.0.0
+  shared_preferences: ^2.5.5
+
+  # self_bias_identification
+  image_picker: ^1.1.2
+  app_usage: ^3.0.0
+  usage_stats: ^1.3.0
+  geolocator: ^10.0.0
+  google_maps_flutter: ^2.9.0
+  permission_handler: ^11.0.0
+  speech_to_text: ^7.0.0
+  device_calendar: ^4.3.3
+  google_fonts: ^6.2.1
+
+  # temporal_causal_patterns / task_prioritization / rag_summary
   firebase_core: ^3.13.0
   cloud_firestore: ^5.6.7
+  firebase_auth: ^5.7.0
   intl: ^0.19.0
   uuid: ^4.4.0
-
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
   flutter_local_notifications: ^22.3.0
   timezone: ^0.11.1
   flutter_timezone: ^5.1.0
-  shared_preferences: ^2.5.5
-  firebase_auth: ^5.7.0
   pdf: ^3.12.0
   printing: ^5.14.3
   dio: ^5.11.0
 
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+# path_provider_foundation 2.5+ added a hard dependency on package:objective_c,
+# which requires Dart's native-assets build hooks. Those hooks fail on Windows
+# when the Flutter SDK is installed under a path containing spaces (our case:
+# "E:\Final Year\flutter") — the hook runner doesn't quote the SDK path when
+# invoking `dart compile kernel`. Pinned back to the last version before that
+# migration; path_provider_foundation is iOS/macOS-only anyway and unused on
+# this Android-only project, so this has no functional effect here. Kept after
+# the merge since pdf/printing/firebase packages also pull path_provider in
+# transitively.
+dependency_overrides:
+  path_provider_foundation: 2.4.4
+
+  # device_calendar 4.3.3 (self_bias_identification, calendar sync) pins
+  # timezone ^0.9.0, but flutter_local_notifications 22.x (task_prioritization,
+  # scheduled reminders) hard-requires timezone ^0.11.0 — the two declared
+  # constraints don't overlap even though no code in this app touches the
+  # timezone package's API directly (device_calendar only uses it internally
+  # for parsing event offsets). Overriding to the newer version resolves the
+  # conflict without downgrading flutter_local_notifications across 4 major
+  # versions.
+  timezone: ^0.11.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -72,7 +107,8 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
-
+  assets:
+    - assets/images/
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

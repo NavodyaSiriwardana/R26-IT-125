@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">TruthLens uses this to identify whether YouTube content viewed is educational or entertainment, for accurate self-bias tracking.</string>
+</resources>

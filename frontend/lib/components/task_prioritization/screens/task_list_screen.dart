@@ -239,7 +239,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
   Color getPriorityColor(String priority) {
     switch (priority) {
       case "Critical":
-        return Colors.deepPurpleAccent;
+        return const Color(0xFF4C8DFF);
       case "High":
         return Colors.redAccent;
       case "Medium":
@@ -452,7 +452,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
       ),
 
       floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.deepPurpleAccent,
+        backgroundColor: const Color(0xFF4C8DFF),
         child: const Icon(Icons.add),
         onPressed: () {
           Navigator.push(
@@ -584,7 +584,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                   maintainState: false,
                   leading: const Icon(
                     Icons.pending_actions_rounded,
-                    color: Colors.deepPurpleAccent,
+                    color: const Color(0xFF4C8DFF),
                   ),
                   title: Text(
                     "Active Tasks (${activeTasks.length})",
@@ -1177,7 +1177,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
         return Colors.cyanAccent;
 
       case "Scheduled":
-        return Colors.deepPurpleAccent;
+        return const Color(0xFF4C8DFF);
 
       case "Upcoming":
         return Colors.cyanAccent;
@@ -2070,7 +2070,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                 color: missedSchedule
                     ? Colors.orangeAccent
                     : validSchedule
-                    ? Colors.deepPurpleAccent
+                    ? const Color(0xFF4C8DFF)
                     : Colors.greenAccent,
               ),
 
