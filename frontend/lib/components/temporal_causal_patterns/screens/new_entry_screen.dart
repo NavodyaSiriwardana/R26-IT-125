@@ -361,7 +361,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                       _NavPill(
                         icon: Icons.visibility_rounded,
                         label: 'Bias Insights',
-                        color: const Color(0xFF35E47B),
+                        color: const Color(0xFF2DD9BE),
                         onTap: () async {
                           AppState.userId = await LocalStorage.getUserId();
                           if (!context.mounted) return;
@@ -668,42 +668,69 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
               padding: const EdgeInsets.all(16),
               child: SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7B61FF),
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                height: 54,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(27),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF7B61FF).withValues(alpha: 0.4),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(27),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(27),
+                      onTap: _loading ? null : _submit,
+                      child: Ink(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(27),
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF2DD9BE)
+                                  .withValues(alpha: _loading ? 0.6 : 1),
+                              const Color(0xFF7B61FF)
+                                  .withValues(alpha: _loading ? 0.6 : 1),
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                        ),
+                        child: Center(
+                          child: _loading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Submit entry',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Icon(Icons.arrow_forward_rounded,
+                                        color: Colors.white, size: 18),
+                                  ],
+                                ),
+                        ),
+                      ),
                     ),
                   ),
-                  child: _loading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Submit entry',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Icon(Icons.arrow_forward,
-                                color: Colors.white, size: 16),
-                          ],
-                        ),
                 ),
               ),
             ),
@@ -972,29 +999,41 @@ class _NavPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final darkColor = Color.lerp(color, Colors.black, 0.4)!;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.10),
+            gradient: LinearGradient(
+              colors: [color, darkColor],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: color.withValues(alpha: 0.35)),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 14, color: color),
+              Icon(icon, size: 15, color: Colors.white),
               const SizedBox(width: 6),
               Text(
                 label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
