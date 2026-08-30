@@ -16,6 +16,8 @@ import 'my_patterns_screen.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
 import '../../rag_summary/screens/Activity_dashboard_screen.dart';
+import 'package:frontend/app_state.dart';
+import '../../self_bias_identification/screens/home_screen.dart';
 
 class NewEntryScreen extends StatefulWidget {
   const NewEntryScreen({super.key});
@@ -296,9 +298,9 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D1A),
+      backgroundColor: const Color(0xFF0A0A16),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0D0D1A),
+        backgroundColor: const Color(0xFF0A0A16),
         elevation: 0,
         centerTitle: true,
         title: const Text(
@@ -306,51 +308,10 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
           style: TextStyle(
             color: Colors.white,
             fontSize: 16,
-            fontWeight: FontWeight.w500,
+            fontWeight: FontWeight.w700,
           ),
         ),
         actions: [
-          TextButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ActivityDashboard(),
-                ),
-              );
-            },
-            icon: const Icon(
-              Icons.dashboard_outlined,
-              size: 14,
-              color: Color(0xFF1DB954),
-            ),
-            label: const Text(
-              'Dashboard',
-              style: TextStyle(
-                color: Color(0xFF1DB954),
-                fontSize: 12,
-              ),
-            ),
-          ),
-          
-          TextButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => MyPatternsScreen()),
-              );
-            },
-            icon: const Icon(Icons.auto_graph,
-                size: 14, color: Color(0xFF7B61FF)),
-            label: const Text(
-              'My Patterns',
-              style: TextStyle(
-                color: Color(0xFF7B61FF),
-                fontSize: 12,
-              ),
-            ),
-          ),
           IconButton(
             icon: const Icon(Icons.logout_outlined,
                 color: Color(0xFF5a5a7a), size: 20),
@@ -360,10 +321,66 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
           const SizedBox(width: 4),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 0.5,
-            color: const Color(0xFF1e1e2e),
+          preferredSize: const Size.fromHeight(53),
+          child: Column(
+            children: [
+              SizedBox(
+                height: 44,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      _NavPill(
+                        icon: Icons.dashboard_outlined,
+                        label: 'Dashboard',
+                        color: const Color(0xFF1DB954),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ActivityDashboard(),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _NavPill(
+                        icon: Icons.auto_graph,
+                        label: 'My Patterns',
+                        color: const Color(0xFF7B61FF),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => MyPatternsScreen()),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _NavPill(
+                        icon: Icons.visibility_rounded,
+                        label: 'Bias Insights',
+                        color: const Color(0xFF35E47B),
+                        onTap: () async {
+                          AppState.userId = await LocalStorage.getUserId();
+                          if (!context.mounted) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const HomeScreen()),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Container(
+                height: 0.5,
+                color: const Color(0xFF1e1e2e),
+              ),
+            ],
           ),
         ),
       ),
@@ -407,20 +424,33 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF13132A),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF16162E), Color(0xFF0F0F22)],
+                    ),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                         color: const Color(0xFF2a2a3a)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_today,
-                          size: 16, color: Color(0xFF7B61FF)),
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7B61FF).withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.calendar_today_rounded,
+                            size: 14, color: Color(0xFF9784FF)),
+                      ),
                       const SizedBox(width: 10),
                       Text(
                         TimeUtils.formatDisplayDate(_entryDate),
                         style: const TextStyle(
-                            color: Colors.white, fontSize: 13),
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -706,22 +736,26 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                 style: const TextStyle(
                   color: Color(0xFFc0c0d8),
                   fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               if (required) ...[
                 const SizedBox(width: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2),
+                      horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE24B4A22),
-                    borderRadius: BorderRadius.circular(4),
+                    color: const Color(0xFFE24B4A).withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: const Color(0xFFE24B4A).withValues(alpha: 0.35)),
                   ),
                   child: const Text(
                     'required',
                     style: TextStyle(
-                      color: Color(0xFFE24B4A),
+                      color: Color(0xFFFF8A98),
                       fontSize: 10,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -739,7 +773,11 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF13132A),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF16162E), Color(0xFF0F0F22)],
+        ),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFF2a2a3a)),
       ),
@@ -775,6 +813,13 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
         color: const Color(0xFF1DB95415),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFF1DB95430)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1DB954).withValues(alpha: 0.18),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -821,40 +866,59 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
         final label = loc['label'] as String;
         final icon = loc['icon'] as IconData;
         final isSelected = _locationType == label;
-        return GestureDetector(
-          onTap: () => setState(() => _locationType = label),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 8, vertical: 10),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? const Color(0xFF7B61FF15)
-                  : const Color(0xFF13132A),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isSelected
-                    ? const Color(0xFF7B61FF)
-                    : const Color(0xFF2a2a3a),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(icon,
-                    size: 14,
-                    color: isSelected
-                        ? const Color(0xFF7B61FF)
-                        : const Color(0xFF9999bb)),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: isSelected
-                        ? const Color(0xFF7B61FF)
-                        : const Color(0xFF9999bb),
-                    fontSize: 12,
-                  ),
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => setState(() => _locationType = label),
+            borderRadius: BorderRadius.circular(10),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 8, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: isSelected
+                    ? const LinearGradient(
+                        colors: [Color(0xFF8A73FF), Color(0xFF6E56E8)],
+                      )
+                    : null,
+                color: isSelected ? null : const Color(0xFF13132A),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFF9784FF)
+                      : const Color(0xFF2a2a3a),
                 ),
-              ],
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF7B61FF).withValues(alpha: 0.32),
+                          blurRadius: 12,
+                          offset: const Offset(0, 5),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                children: [
+                  Icon(icon,
+                      size: 14,
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFF9999bb)),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFF9999bb),
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -889,6 +953,54 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
       height: 0.5,
       margin: const EdgeInsets.symmetric(horizontal: 16),
       color: const Color(0xFF1e1e2e),
+    );
+  }
+}
+
+class _NavPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _NavPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

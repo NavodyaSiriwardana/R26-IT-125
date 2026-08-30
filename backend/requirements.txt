@@ -45,7 +45,7 @@ bert-score
 torch==2.13.0
 transformers==5.15.0
 pillow==12.1.1
-mediapipe==1.0.1
+mediapipe==0.10.21
 opencv-contrib-python==5.0.0.93
 
 anthropic==0.97.0

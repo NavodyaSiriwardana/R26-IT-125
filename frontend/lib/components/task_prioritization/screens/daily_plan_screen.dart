@@ -581,7 +581,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                     result["total_scheduled_minutes"],
                   ),
                   label: "Task time",
-                  color: Colors.deepPurpleAccent,
+                  color: const Color(0xFF4C8DFF),
                 ),
                 _buildSummaryMetric(
                   icon: Icons.coffee_rounded,
@@ -1206,7 +1206,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
   Color _priorityColor(String priority) {
     switch (priority.toLowerCase()) {
       case "critical":
-        return Colors.deepPurpleAccent;
+        return const Color(0xFF4C8DFF);
 
       case "high":
         return Colors.redAccent;
@@ -1388,7 +1388,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
     required String label,
     required String value,
     required VoidCallback? onTap,
-    Color iconColor = Colors.deepPurpleAccent,
+    Color iconColor = const Color(0xFF4C8DFF),
   }) {
     return Material(
       color: Colors.white.withOpacity(0.035),
@@ -1467,9 +1467,9 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
       margin: const EdgeInsets.only(top: 14, bottom: 6),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.deepPurpleAccent.withOpacity(0.08),
+        color: const Color(0xFF4C8DFF).withOpacity(0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.deepPurpleAccent.withOpacity(0.30)),
+        border: Border.all(color: const Color(0xFF4C8DFF).withOpacity(0.30)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1478,7 +1478,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
             children: [
               Icon(
                 Icons.recommend_rounded,
-                color: Colors.deepPurpleAccent,
+                color: const Color(0xFF4C8DFF),
                 size: 21,
               ),
               SizedBox(width: 9),
@@ -1491,7 +1491,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
               Text(
                 "PREVIEW",
                 style: TextStyle(
-                  color: Colors.deepPurpleAccent,
+                  color: const Color(0xFF4C8DFF),
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.5,
@@ -1528,9 +1528,9 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                       );
                     },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurpleAccent,
+                backgroundColor: const Color(0xFF4C8DFF),
                 foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.deepPurpleAccent.withOpacity(
+                disabledBackgroundColor: const Color(0xFF4C8DFF).withOpacity(
                   0.30,
                 ),
                 disabledForegroundColor: Colors.white60,
@@ -1769,7 +1769,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                       'EEEE, MMM d, yyyy',
                     ).format(selectedPlanDate),
                     onTap: isGenerating ? null : _pickPlanDate,
-                    iconColor: Colors.deepPurpleAccent,
+                    iconColor: const Color(0xFF4C8DFF),
                   ),
 
                   const SizedBox(height: 10),
@@ -1853,7 +1853,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: const BorderSide(
-                          color: Colors.deepPurpleAccent,
+                          color: const Color(0xFF4C8DFF),
                           width: 1.3,
                         ),
                       ),
@@ -1931,7 +1931,7 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: const BorderSide(
-                          color: Colors.deepPurpleAccent,
+                          color: const Color(0xFF4C8DFF),
                           width: 1.3,
                         ),
                       ),
@@ -1968,9 +1968,9 @@ class _DailyPlanScreenState extends State<DailyPlanScreen> {
                           ? null
                           : _generatePlan,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurpleAccent,
+                        backgroundColor: const Color(0xFF4C8DFF),
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.deepPurpleAccent
+                        disabledBackgroundColor: const Color(0xFF4C8DFF)
                             .withOpacity(0.30),
                         disabledForegroundColor: Colors.white60,
                         elevation: 0,

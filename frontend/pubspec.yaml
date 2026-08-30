@@ -80,6 +80,16 @@ dev_dependencies:
 dependency_overrides:
   path_provider_foundation: 2.4.4
 
+  # device_calendar 4.3.3 (self_bias_identification, calendar sync) pins
+  # timezone ^0.9.0, but flutter_local_notifications 22.x (task_prioritization,
+  # scheduled reminders) hard-requires timezone ^0.11.0 — the two declared
+  # constraints don't overlap even though no code in this app touches the
+  # timezone package's API directly (device_calendar only uses it internally
+  # for parsing event offsets). Overriding to the newer version resolves the
+  # conflict without downgrading flutter_local_notifications across 4 major
+  # versions.
+  timezone: ^0.11.1
+
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your

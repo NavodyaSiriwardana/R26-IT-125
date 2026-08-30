@@ -191,41 +191,53 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         onPageChanged: _handlePageChanged,
         children: _screens,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          unawaited(_selectScreen(index));
-        },
-        backgroundColor: const Color(0xFF17141C),
-        indicatorColor: Colors.deepPurpleAccent.withValues(alpha: 0.22),
-        height: 72,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.checklist_rounded),
-            selectedIcon: Icon(
-              Icons.checklist_rounded,
-              color: Colors.deepPurpleAccent,
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 24,
+              offset: const Offset(0, -8),
             ),
-            label: 'Tasks',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(
-              Icons.calendar_month_rounded,
-              color: Colors.deepPurpleAccent,
+          ],
+        ),
+        child: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) {
+            unawaited(_selectScreen(index));
+          },
+          backgroundColor: const Color(0xFF14121C),
+          indicatorColor: const Color(0xFF4C8DFF).withValues(alpha: 0.22),
+          elevation: 0,
+          height: 72,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.checklist_rounded),
+              selectedIcon: Icon(
+                Icons.checklist_rounded,
+                color: Color(0xFF4C8DFF),
+              ),
+              label: 'Tasks',
             ),
-            label: 'Daily Plan',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(
-              Icons.insights_rounded,
-              color: Colors.deepPurpleAccent,
+            NavigationDestination(
+              icon: Icon(Icons.calendar_month_outlined),
+              selectedIcon: Icon(
+                Icons.calendar_month_rounded,
+                color: Color(0xFF4C8DFF),
+              ),
+              label: 'Daily Plan',
             ),
-            label: 'Insights',
-          ),
-        ],
+            NavigationDestination(
+              icon: Icon(Icons.insights_outlined),
+              selectedIcon: Icon(
+                Icons.insights_rounded,
+                color: Color(0xFF4C8DFF),
+              ),
+              label: 'Insights',
+            ),
+          ],
+        ),
       ),
     );
   }
