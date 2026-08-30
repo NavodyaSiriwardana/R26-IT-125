@@ -54,7 +54,8 @@ protobuf>=6.33.1,<6.34
 # mp.solutions.* API. facial_service.py is written against the modern
 # mediapipe.tasks API instead, using downloaded .tflite/.task model assets
 # (see ml_models/mediapipe_models/).
-torch==2.13.0
+torch==2.12.1
+torchvision==0.27.1
 transformers==5.15.0
 pillow==12.1.1
 mediapipe==1.0.1
