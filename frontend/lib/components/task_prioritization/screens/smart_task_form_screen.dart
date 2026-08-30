@@ -1035,7 +1035,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
         await showDialog(
           context: context,
           builder: (_) => AlertDialog(
-            backgroundColor: const Color(0xFF1E293B),
+            backgroundColor: const Color(0xFF141428),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
@@ -1471,7 +1471,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             ),
             const SizedBox(height: 12),
             Card(
-              color: const Color(0xFF1E293B),
+              color: const Color(0xFF141428),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -1507,7 +1507,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             ),
             const SizedBox(height: 12),
             Card(
-              color: const Color(0xFF1E293B),
+              color: const Color(0xFF141428),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -1541,7 +1541,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
+                color: const Color(0xFF141428),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Row(
@@ -1584,7 +1584,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
+                  color: const Color(0xFF141428),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: SwitchListTile(
@@ -1615,7 +1615,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             const SizedBox(height: 18),
 
             Card(
-              color: const Color(0xFF1E293B),
+              color: const Color(0xFF141428),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -1644,7 +1644,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             const SizedBox(height: 14),
 
             Card(
-              color: const Color(0xFF1E293B),
+              color: const Color(0xFF141428),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -1687,7 +1687,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                   label: Text(c),
                   selected: isSelected,
                   selectedColor: Colors.cyanAccent,
-                  backgroundColor: const Color(0xFF1E293B),
+                  backgroundColor: const Color(0xFF141428),
                   labelStyle: TextStyle(
                     color: isSelected ? Colors.black : Colors.white70,
                     fontWeight: FontWeight.bold,
@@ -1712,7 +1712,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
               DropdownButtonFormField<int>(
                 value: estimatedDurationMinutes,
-                dropdownColor: const Color(0xFF1E293B),
+                dropdownColor: const Color(0xFF141428),
                 decoration: InputDecoration(
                   labelText: "How long will this task take?",
                   prefixIcon: const Icon(
@@ -1720,7 +1720,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                     color: const Color(0xFF4C8DFF),
                   ),
                   filled: true,
-                  fillColor: const Color(0xFF1E293B),
+                  fillColor: const Color(0xFF141428),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide.none,
@@ -1768,7 +1768,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
+                  color: const Color(0xFF141428),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
@@ -1798,79 +1798,131 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
               const SizedBox(height: 30),
             ],
 
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _predicted
-                      ? Colors.green.withValues(alpha: 0.30)
-                      : const Color(0xFF4C8DFF),
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFF4C8DFF).withValues(
-                    alpha: 0.40,
-                  ),
-                  disabledForegroundColor: Colors.white70,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
+            Builder(
+              builder: (context) {
+                final bool enabled = !_isPredicting && !_isAddingTask;
+                return SizedBox(
+                  width: double.infinity,
+                  child: Material(
+                    color: Colors.transparent,
                     borderRadius: BorderRadius.circular(18),
-                  ),
-                ),
-                onPressed: _isPredicting || _isAddingTask ? null : analyzeTask,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  switchInCurve: Curves.easeOut,
-                  switchOutCurve: Curves.easeIn,
-                  child: _isPredicting
-                      ? const Row(
-                          key: ValueKey<String>('analyzing'),
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            ),
-                            SizedBox(width: 10),
-                            Text(
-                              "Analyzing...",
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        )
-                      : Row(
-                          key: ValueKey<String>(
-                            _predicted
-                                ? 'update-analysis'
-                                : 'generate-analysis',
-                          ),
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              _predicted
-                                  ? Icons.check_circle_rounded
-                                  : Icons.auto_awesome_rounded,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _predicted
-                                  ? "Update Priority Analysis"
-                                  : "Generate Priority Analysis",
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: enabled ? analyzeTask : null,
+                      child: Ink(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          gradient: _predicted
+                              ? const LinearGradient(
+                                  colors: [
+                                    Color(0xFF1FAE63),
+                                    Color(0xFF166B3E),
+                                  ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                )
+                              : LinearGradient(
+                                  colors: enabled
+                                      ? const [
+                                          Color(0xFF4C8DFF),
+                                          Color(0xFF9B87FF),
+                                        ]
+                                      : [
+                                          const Color(
+                                            0xFF4C8DFF,
+                                          ).withValues(alpha: 0.40),
+                                          const Color(
+                                            0xFF9B87FF,
+                                          ).withValues(alpha: 0.40),
+                                        ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                          boxShadow: enabled
+                              ? [
+                                  BoxShadow(
+                                    color:
+                                        (_predicted
+                                                ? const Color(0xFF1FAE63)
+                                                : const Color(0xFF4C8DFF))
+                                            .withValues(alpha: 0.35),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ]
+                              : null,
                         ),
-                ),
-              ),
+                        child: DefaultTextStyle.merge(
+                          style: TextStyle(
+                            color: enabled ? Colors.white : Colors.white70,
+                          ),
+                          child: IconTheme.merge(
+                            data: IconThemeData(
+                              color: enabled ? Colors.white : Colors.white70,
+                            ),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              switchInCurve: Curves.easeOut,
+                              switchOutCurve: Curves.easeIn,
+                              child: _isPredicting
+                                  ? const Row(
+                                      key: ValueKey<String>('analyzing'),
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        SizedBox(width: 10),
+                                        Text(
+                                          "Analyzing...",
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Row(
+                                      key: ValueKey<String>(
+                                        _predicted
+                                            ? 'update-analysis'
+                                            : 'generate-analysis',
+                                      ),
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          _predicted
+                                              ? Icons.check_circle_rounded
+                                              : Icons.auto_awesome_rounded,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _predicted
+                                              ? "Update Priority Analysis"
+                                              : "Generate Priority Analysis",
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
 
             if (!_predicted)
@@ -1977,81 +2029,131 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
                     const SizedBox(height: 16),
 
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              _importanceSelected && _severitySelected
-                              ? const Color(0xFF7C4DFF)
-                              : Colors.white.withValues(alpha: 0.08),
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.white.withValues(
-                            alpha: 0.08,
-                          ),
-                          disabledForegroundColor: Colors.white38,
-                          elevation: _importanceSelected && _severitySelected
-                              ? 4
-                              : 0,
-                          padding: const EdgeInsets.symmetric(vertical: 17),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        onPressed:
+                    Builder(
+                      builder: (context) {
+                        final bool enabled =
                             !_isAddingTask &&
-                                !_isPredicting &&
-                                _importanceSelected &&
-                                _severitySelected
-                            ? addTask
-                            : null,
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          switchInCurve: Curves.easeOut,
-                          switchOutCurve: Curves.easeIn,
-                          child: _isAddingTask
-                              ? Row(
-                                  key: ValueKey<String>(_submissionStatus),
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const SizedBox(
-                                      width: 19,
-                                      height: 19,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Flexible(
-                                      child: Text(
-                                        _submissionStatus,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : const Row(
-                                  key: ValueKey<String>('create-task'),
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.auto_awesome_rounded),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      "Create & Rank Task",
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
+                            !_isPredicting &&
+                            _importanceSelected &&
+                            _severitySelected;
+                        return SizedBox(
+                          width: double.infinity,
+                          child: Material(
+                            color: Colors.transparent,
+                            borderRadius: BorderRadius.circular(15),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(15),
+                              onTap: enabled ? addTask : null,
+                              child: Ink(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 17,
                                 ),
-                        ),
-                      ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(15),
+                                  gradient: enabled
+                                      ? const LinearGradient(
+                                          colors: [
+                                            Color(0xFF7C4DFF),
+                                            Color(0xFF4C8DFF),
+                                          ],
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                        )
+                                      : null,
+                                  color: enabled
+                                      ? null
+                                      : Colors.white.withValues(alpha: 0.08),
+                                  boxShadow: enabled
+                                      ? [
+                                          BoxShadow(
+                                            color: const Color(
+                                              0xFF7C4DFF,
+                                            ).withValues(alpha: 0.35),
+                                            blurRadius: 20,
+                                            offset: const Offset(0, 10),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: DefaultTextStyle.merge(
+                                  style: TextStyle(
+                                    color: enabled
+                                        ? Colors.white
+                                        : Colors.white38,
+                                  ),
+                                  child: IconTheme.merge(
+                                    data: IconThemeData(
+                                      color: enabled
+                                          ? Colors.white
+                                          : Colors.white38,
+                                    ),
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(
+                                        milliseconds: 180,
+                                      ),
+                                      switchInCurve: Curves.easeOut,
+                                      switchOutCurve: Curves.easeIn,
+                                      child: _isAddingTask
+                                          ? Row(
+                                              key: ValueKey<String>(
+                                                _submissionStatus,
+                                              ),
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                const SizedBox(
+                                                  width: 19,
+                                                  height: 19,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Flexible(
+                                                  child: Text(
+                                                    _submissionStatus,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            )
+                                          : const Row(
+                                              key: ValueKey<String>(
+                                                'create-task',
+                                              ),
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Icon(
+                                                  Icons.auto_awesome_rounded,
+                                                ),
+                                                SizedBox(width: 8),
+                                                Text(
+                                                  "Create & Rank Task",
+                                                  style: TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight:
+                                                        FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
 
                     if (!_importanceSelected || !_severitySelected) ...[
