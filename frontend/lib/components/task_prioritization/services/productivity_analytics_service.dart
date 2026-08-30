@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ProductivityAnalytics {
   final int completed;
@@ -82,6 +83,16 @@ class DailyProductivityTrend {
 
 class ProductivityAnalyticsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  String _requireCurrentUserId() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('No authenticated user is currently signed in.');
+    }
+
+    return user.uid;
+  }
 
   bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
@@ -201,7 +212,12 @@ class ProductivityAnalyticsService {
   }
 
   Future<ProductivityAnalytics> getAnalyticsForDay(DateTime day) async {
-    final snapshot = await _firestore.collection('tasks').get();
+    final userId = _requireCurrentUserId();
+
+    final snapshot = await _firestore
+        .collection('tasks')
+        .where('userId', isEqualTo: userId)
+        .get();
 
     final allTasks = snapshot.docs.map((doc) {
       final data = Map<String, dynamic>.from(doc.data());
@@ -410,7 +426,12 @@ class ProductivityAnalyticsService {
   }
 
   Future<List<DailyProductivityTrend>> getLast7DaysAnalytics() async {
-    final snapshot = await _firestore.collection('tasks').get();
+    final userId = _requireCurrentUserId();
+
+    final snapshot = await _firestore
+        .collection('tasks')
+        .where('userId', isEqualTo: userId)
+        .get();
 
     final allTasks = snapshot.docs.map((doc) {
       final data = Map<String, dynamic>.from(doc.data());

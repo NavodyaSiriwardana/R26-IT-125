@@ -429,7 +429,19 @@ class _TaskListScreenState extends State<TaskListScreen> {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
+
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+          },
+        ),
+
         title: const Text("Smart Task List"),
+
         actions: [
           IconButton(
             tooltip: 'Notification preferences',
