@@ -88,7 +88,7 @@ class PatternCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            pattern.insightText,
+            pattern.shortInsight,
             style: const TextStyle(
               color: Color(0xFFd0d0e8),
               fontSize: 13,
