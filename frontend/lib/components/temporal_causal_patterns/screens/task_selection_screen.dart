@@ -57,7 +57,7 @@ class TaskSelectionScreen extends StatelessWidget {
 
                 // FUTURE TASK — routes to friend's component
                 _ModeCard(
-                  gradientColors: const [Color(0xFF2DD9BE), Color(0xFF7B61FF)],
+                  gradientColors: const [Color(0xFF1E9E89), Color(0xFF5A46C4)],
                   glowColor: const Color(0xFF7B61FF),
                   icon: Icons.upcoming_rounded,
                   title: 'Future Task',
@@ -75,7 +75,7 @@ class TaskSelectionScreen extends StatelessWidget {
 
                 // PAST TASK — routes to YOUR diary entry template
                 _ModeCard(
-                  gradientColors: const [Color(0xFF2DD9BE), Color(0xFF1DB954)],
+                  gradientColors: const [Color(0xFF1E9E89), Color(0xFF178A41)],
                   glowColor: const Color(0xFF1DB954),
                   icon: Icons.history_edu_rounded,
                   title: 'Past Task',

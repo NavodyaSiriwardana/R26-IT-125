@@ -80,7 +80,7 @@ class SplashScreen extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Text(
-                'Log what happened, see what your\nbehavior actually says about it.',
+                'Prioritize what\'s ahead,\nunderstand what\'s behind.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.ibmPlexSans(
                   fontSize: 14,

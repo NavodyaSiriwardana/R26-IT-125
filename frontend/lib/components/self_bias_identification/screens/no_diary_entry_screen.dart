@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:frontend/components/self_bias_identification/screens/test_diary_entry_screen.dart';
+import 'package:frontend/components/temporal_causal_patterns/screens/new_entry_screen.dart';
 
 /// Shown when /analyze-from-diary finds no document in the team's shared
 /// diaryEntries collection for this user — the manual form was removed
@@ -77,7 +77,7 @@ class NoDiaryEntryScreen extends StatelessWidget {
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const TestDiaryEntryScreen(),
+                            builder: (_) => const NewEntryScreen(),
                           ),
                         );
                       },

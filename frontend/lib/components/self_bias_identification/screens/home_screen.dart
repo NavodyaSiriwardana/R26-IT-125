@@ -7,10 +7,11 @@ import 'package:frontend/components/self_bias_identification/widgets/tilt_card.d
 import 'package:frontend/components/self_bias_identification/screens/bias_result_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/weekly_trends_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/recommendations_screen.dart';
-import 'package:frontend/components/self_bias_identification/screens/userformScreen.dart';
 import 'package:frontend/components/self_bias_identification/screens/profile_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/all_entries_screen.dart'
     as all_entries;
+import 'package:frontend/components/temporal_causal_patterns/screens/new_entry_screen.dart'
+    as temporal;
 import 'package:frontend/components/self_bias_identification/screens/facial_capture_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/my_locations_screen.dart';
 import 'package:frontend/components/self_bias_identification/services/location_service.dart';
@@ -877,7 +878,8 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const BiasFormScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => const all_entries.AllEntriesScreen()),
                 ).then((_) => _loadData());
               },
             ),
@@ -2023,7 +2025,8 @@ class _HomeScreenState extends State<HomeScreen> {
               HapticFeedback.lightImpact();
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const BiasFormScreen()),
+                MaterialPageRoute(
+                    builder: (_) => const temporal.NewEntryScreen()),
               ).then((_) => _loadData());
             },
             child: Container(
