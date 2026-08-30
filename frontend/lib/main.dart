@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'firebase_options.dart';
 
 import 'components/task_prioritization/services/notification_service.dart';
-import 'components/temporal_causal_patterns/screens/login_screen.dart';
+import 'screens/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -80,7 +80,7 @@ class MyApp extends StatelessWidget {
         ),
       ),
 
-      home: const LoginScreen(),
+      home: const SplashScreen(),
     );
   }
 }

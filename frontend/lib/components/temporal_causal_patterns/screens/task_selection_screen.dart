@@ -30,7 +30,7 @@ class TaskSelectionScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 22,
+                    fontSize: 25,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.3,
                     height: 1.25,
@@ -42,13 +42,13 @@ class TaskSelectionScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 9),
+                const SizedBox(height: 10),
                 const Text(
                   'CHOOSE HOW YOU WANT TO MANAGE YOUR DAY',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Color(0xFF8888AC),
-                    fontSize: 11,
+                    color: Color(0xFF9C9CC0),
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 1.1,
                   ),
@@ -57,7 +57,8 @@ class TaskSelectionScreen extends StatelessWidget {
 
                 // FUTURE TASK — routes to friend's component
                 _ModeCard(
-                  accent: const Color(0xFF7B61FF),
+                  gradientColors: const [Color(0xFF2DD9BE), Color(0xFF7B61FF)],
+                  glowColor: const Color(0xFF7B61FF),
                   icon: Icons.upcoming_rounded,
                   title: 'Future Task',
                   subtitle: 'Plan and prioritize upcoming tasks',
@@ -74,7 +75,8 @@ class TaskSelectionScreen extends StatelessWidget {
 
                 // PAST TASK — routes to YOUR diary entry template
                 _ModeCard(
-                  accent: const Color(0xFF1DB954),
+                  gradientColors: const [Color(0xFF2DD9BE), Color(0xFF1DB954)],
+                  glowColor: const Color(0xFF1DB954),
                   icon: Icons.history_edu_rounded,
                   title: 'Past Task',
                   subtitle: 'Log a diary entry & discover patterns',
@@ -96,14 +98,16 @@ class TaskSelectionScreen extends StatelessWidget {
 }
 
 class _ModeCard extends StatelessWidget {
-  final Color accent;
+  final List<Color> gradientColors;
+  final Color glowColor;
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
   const _ModeCard({
-    required this.accent,
+    required this.gradientColors,
+    required this.glowColor,
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -117,25 +121,21 @@ class _ModeCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        splashColor: accent.withValues(alpha: 0.12),
-        highlightColor: accent.withValues(alpha: 0.06),
+        splashColor: Colors.white.withValues(alpha: 0.12),
+        highlightColor: Colors.white.withValues(alpha: 0.06),
         child: Container(
-          padding: const EdgeInsets.all(22),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             gradient: LinearGradient(
+              colors: gradientColors,
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                accent.withValues(alpha: 0.10),
-                const Color(0xFF13132A),
-              ],
             ),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accent.withValues(alpha: 0.55)),
             boxShadow: [
               BoxShadow(
-                color: accent.withValues(alpha: 0.16),
-                blurRadius: 28,
+                color: glowColor.withValues(alpha: 0.45),
+                blurRadius: 26,
                 offset: const Offset(0, 14),
               ),
             ],
@@ -146,33 +146,55 @@ class _ModeCard extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: accent.withValues(alpha: 0.35)),
+                  color: Colors.white.withValues(alpha: 0.16),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      blurRadius: 22,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
-                child: Icon(icon, color: accent, size: 26),
+                child: Icon(icon, color: Colors.white, size: 26),
               ),
-              const SizedBox(width: 18),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16.5,
+                        fontSize: 17,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.1,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 8,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 5),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        color: Color(0xFF9494B8),
-                        fontSize: 12.5,
-                        height: 1.3,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        height: 1.35,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            blurRadius: 6,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -180,14 +202,14 @@ class _ModeCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Container(
-                width: 28,
-                height: 28,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.14),
+                  color: Colors.white.withValues(alpha: 0.22),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.arrow_forward_rounded,
-                    color: accent, size: 15),
+                child: const Icon(Icons.arrow_forward_rounded,
+                    color: Colors.white, size: 16),
               ),
             ],
           ),
