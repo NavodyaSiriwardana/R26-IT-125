@@ -42,6 +42,11 @@ _face_landmarker = mp_vision.FaceLandmarker.create_from_options(
 )
 
 
+# Sentinel returned by detect_and_crop_face when more than one prominent
+# face is found, distinguishing it from the "no face at all" (None) case.
+MULTIPLE_FACES = "MULTIPLE_FACES_DETECTED"
+
+
 def is_image_blurry(image: Image.Image, threshold: float = 15.0) -> bool:
     img_array = np.array(image.convert("RGB"))
     gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
@@ -59,10 +64,18 @@ def detect_and_crop_face(image: Image.Image):
 
     # BoundingBox fields are already absolute pixel coordinates in the
     # Tasks API (unlike the old relative_bounding_box, which was 0-1).
-    detection = max(
-        results.detections,
-        key=lambda d: d.bounding_box.width * d.bounding_box.height
-    )
+    areas = [d.bounding_box.width * d.bounding_box.height for d in results.detections]
+    largest_area = max(areas)
+
+    # A second face only counts as a real "someone else is in frame" case
+    # if it's a comparable size to the main face — a small face far in the
+    # background (a photo on the wall, someone walking past) shouldn't
+    # reject an otherwise valid selfie.
+    significant_faces = sum(1 for a in areas if a >= 0.35 * largest_area)
+    if significant_faces > 1:
+        return MULTIPLE_FACES, False
+
+    detection = results.detections[areas.index(largest_area)]
     bbox = detection.bounding_box
 
     x = max(0, bbox.origin_x)
@@ -103,6 +116,12 @@ def analyze_facial_expression(image_base64: str):
             }
 
         face_image, landmarks_visible = detect_and_crop_face(image)
+
+        if face_image == MULTIPLE_FACES:
+            return {
+                "status": "multiple_faces_detected",
+                "message": "More than one face was detected in the frame. Please make sure only you are visible, then retake the photo."
+            }
 
         if face_image is None:
             return {

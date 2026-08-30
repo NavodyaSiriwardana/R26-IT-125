@@ -13,10 +13,10 @@ packages:
     dependency: "direct main"
     description:
       name: app_usage
-      sha256: "6e387c9dbf1a7232e43d1a65edfd077c0fffd4460e2cec86555c2428787cf511"
+      sha256: "4b2f192896bcaf074c1191484d5a37f12aeaaa75d3f56c401c05576833836b11"
       url: "https://pub.dev"
     source: hosted
-    version: "3.0.1"
+    version: "4.1.0"
   archive:
     dependency: transitive
     description:

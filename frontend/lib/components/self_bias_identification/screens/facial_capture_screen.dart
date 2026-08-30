@@ -193,7 +193,10 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
         _result != null && _result!['status'] == 'partial_face';
     final bool isBlurryImage =
         _result != null && _result!['status'] == 'blurry_image';
-    final bool showWarning = isNoFace || isPartialFace || isBlurryImage;
+    final bool isMultipleFaces =
+        _result != null && _result!['status'] == 'multiple_faces_detected';
+    final bool showWarning =
+        isNoFace || isPartialFace || isBlurryImage || isMultipleFaces;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E14),
@@ -601,10 +604,14 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
     final isNoFace = _result!['status'] == 'no_face_detected';
     final isBlurry = _result!['status'] == 'blurry_image';
     final isPartial = _result!['status'] == 'partial_face';
+    final isMultipleFaces = _result!['status'] == 'multiple_faces_detected';
 
     final faceChip = isNoFace
         ? _diagnosticChip(Icons.close, 'No face detected', Colors.redAccent)
-        : _diagnosticChip(Icons.check, 'Face detected', green);
+        : isMultipleFaces
+            ? _diagnosticChip(
+                Icons.close, 'Multiple faces detected', Colors.redAccent)
+            : _diagnosticChip(Icons.check, 'Face detected', green);
 
     final qualityChip = isBlurry
         ? _diagnosticChip(Icons.close, 'Image blurry', Colors.orangeAccent)
@@ -617,7 +624,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
       alignment: WrapAlignment.center,
       spacing: 10,
       runSpacing: 8,
-      children: [faceChip, if (!isNoFace) qualityChip],
+      children: [faceChip, if (!isNoFace && !isMultipleFaces) qualityChip],
     );
   }
 

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app_state.dart';
-import 'package:frontend/components/self_bias_identification/screens/login_screen.dart';
+import 'package:frontend/components/temporal_causal_patterns/screens/login_screen.dart';
+import 'package:frontend/components/temporal_causal_patterns/services/local_storage.dart';
 import 'package:frontend/components/self_bias_identification/screens/weekly_trends_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/bias_details_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/recommendations_screen.dart';
@@ -435,8 +436,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Text('Cancel', style: TextStyle(color: Colors.white.withOpacity(0.6))),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              await LocalStorage.clearAll();
               AppState.userId = '';
+              if (!context.mounted) return;
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
