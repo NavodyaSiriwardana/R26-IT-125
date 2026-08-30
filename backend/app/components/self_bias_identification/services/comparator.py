@@ -1,13 +1,27 @@
 class MultiSignalComparator:
 
+    # Categories where "verified educational app usage" is a meaningful
+    # ground truth for the claimed time (the student would plausibly be
+    # on a phone/laptop doing that work). For everything else (Play,
+    # Trips, Entertainment, Meeting, Internship — offline/physical or
+    # non-study activities), phone educational-app time is expected to
+    # be ~0 regardless of whether the entry is truthful, so scoring the
+    # duration/activity signals against it would falsely flag every
+    # honest leisure entry as "productivity overestimation".
+    STUDY_CATEGORIES = {"Lecture", "Self-study", "Assignment", "Group work"}
+
     def compare(self, diary_entry: dict,
                 sensor_data: dict) -> dict:
+
+        activity_category = diary_entry.get(
+            "activity_category", "")
+        is_study_category = activity_category in self.STUDY_CATEGORIES
 
         claimed_duration = diary_entry.get(
             "claimed_duration_minutes", 0)
         verified_edu = sensor_data.get(
             "verified_educational_minutes", 0)
-        
+
         social_media = sensor_data.get(
             "social_media_minutes", 0)
         distraction = sensor_data.get(
@@ -28,10 +42,20 @@ class MultiSignalComparator:
             "mood_after", "")
 
         # Signal 1: Duration
-        duration_gap = claimed_duration - verified_edu
-        duration_match_ratio = round(
-            min(verified_edu / claimed_duration, 1.0), 2
-        ) if claimed_duration > 0 else 0
+        # Only scored against verified educational app time for
+        # study-type categories — see STUDY_CATEGORIES above. For a
+        # leisure/offline entry (e.g. "Play" / "Go to Gym"), 0 minutes
+        # of educational app usage is expected and truthful, so the
+        # signal is neutralized (no gap, perfect match) rather than
+        # scored as a mismatch.
+        if is_study_category:
+            duration_gap = claimed_duration - verified_edu
+            duration_match_ratio = round(
+                min(verified_edu / claimed_duration, 1.0), 2
+            ) if claimed_duration > 0 else 0
+        else:
+            duration_gap = 0
+            duration_match_ratio = 1.0
 
         # Signal 2: Location
         location_match = 1 if (
@@ -44,8 +68,11 @@ class MultiSignalComparator:
             max(0, 1 - (app_switches / 80)), 2)
 
         # Signal 4: Activity
-        activity_match = 1 if (
-            verified_edu > social_media) else 0
+        # Same reasoning as Signal 1 — "educational app time > social
+        # media time" only makes sense to check for study categories.
+        activity_match = (
+            1 if (verified_edu > social_media) else 0
+        ) if is_study_category else 1
 
         # Fix 2: Stress mismatch
         positive_moods = [
@@ -91,6 +118,8 @@ class MultiSignalComparator:
         }
 
         comparison = {
+            "activity_category": activity_category,
+            "is_study_category": is_study_category,
             "claimed_duration": claimed_duration,
             "verified_educational": verified_edu,
             "duration_gap": duration_gap,
