@@ -27,9 +27,20 @@ class PatternCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF13132A),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF16162E), Color(0xFF0F0F22)],
+        ),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -43,7 +54,7 @@ class PatternCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: badgeColor.withOpacity(0.15),
+                      color: badgeColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -125,22 +136,28 @@ class PatternCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: GestureDetector(
-                  onTap: onSeeEvidence,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 8),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: const Color(0xFF7B61FF)),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'See dates',
-                        style: TextStyle(
-                          color: Color(0xFF7B61FF),
-                          fontSize: 12,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onSeeEvidence,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF7B61FF).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: const Color(0xFF7B61FF)),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'See dates',
+                          style: TextStyle(
+                            color: Color(0xFF9784FF),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
@@ -148,16 +165,20 @@ class PatternCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onDismiss,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
-                  child: Text(
-                    'Dismiss',
-                    style: TextStyle(
-                      color: Color(0xFF5a5a7a),
-                      fontSize: 12,
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onDismiss,
+                  borderRadius: BorderRadius.circular(8),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    child: Text(
+                      'Dismiss',
+                      style: TextStyle(
+                        color: Color(0xFF5a5a7a),
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),

@@ -4,11 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import neo4j_conn
 
-
 from app.routes.task_routes import router as task_router
 from app.firebase.firebase_client import initialize_firebase
 from app.components.temporal_causal_patterns.graph_builder import graph_builder
 from app.routes import api_router
+from app.components.self_bias_identification.routes.bias_routes import router as bias_router
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -23,7 +24,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,6 +31,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 # ─────────────────────────────────────────────
 # STARTUP EVENT
 # ─────────────────────────────────────────────
@@ -62,6 +63,16 @@ async def shutdown_event():
 
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(task_router)
+
+# self_bias_identification keeps its own top-level /api/bias prefix
+# (unchanged from before the merge) rather than nesting under /api/v1, so
+# the existing Flutter app's ApiService.baseUrl + "/api/bias/..." calls
+# don't need to change.
+app.include_router(
+    bias_router,
+    prefix="/api/bias",
+    tags=["Bias Detection"],
+)
 
 
 # ─────────────────────────────────────────────

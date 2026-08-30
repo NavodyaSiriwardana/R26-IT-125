@@ -343,7 +343,7 @@ class _NotificationPreferencesScreenState
                 _sectionCard(
                   child: _preferenceSwitch(
                     icon: Icons.notifications_rounded,
-                    color: Colors.deepPurpleAccent,
+                    color: const Color(0xFF4C8DFF),
                     title: 'Task notifications',
                     subtitle: 'Enable or disable every task reminder.',
                     value: enabled,
@@ -471,7 +471,7 @@ class _NotificationPreferencesScreenState
                       : const Icon(Icons.save_rounded),
                   label: Text(_isSaving ? 'Saving...' : 'Save Changes'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.deepPurpleAccent,
+                    backgroundColor: const Color(0xFF4C8DFF),
                     padding: const EdgeInsets.symmetric(vertical: 15),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(15),

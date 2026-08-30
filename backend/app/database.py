@@ -1,6 +1,16 @@
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, AuthError
 from app.config import settings
+from app.firebase.firebase_client import get_firestore_client
+
+# Firestore — shared across every component (self_bias_identification,
+# rag_summary, dashboard, ...). Routed through app.firebase.firebase_client
+# so Firebase is only ever initialized once; calling
+# firebase_admin.initialize_app() a second time directly here (the old
+# self_bias_identification-only approach) would raise "app already exists"
+# once merged alongside components that already call it.
+db = get_firestore_client()
+print("Firebase connected!")
 
 
 class Neo4jConnection:

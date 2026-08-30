@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -6,6 +8,15 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+// Secrets (API keys) are kept out of source control in local.properties
+// (already gitignored) and injected as manifest placeholders instead.
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY") ?: ""
+
 android {
     namespace = "com.r26.intelligentdiary"
     compileSdk = flutter.compileSdkVersion
@@ -13,7 +24,7 @@ android {
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
-        
+
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -32,6 +43,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         multiDexEnabled = true
     }
 
