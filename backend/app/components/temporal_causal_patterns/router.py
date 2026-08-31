@@ -45,7 +45,12 @@ def insert_diary_entry(request: DiaryEntryRequest):
             status_code=500,
             detail=f"Failed to insert diary entry: {str(e)}"
         )
-#bulck insert endpoint can be added later for testing with large datasets, but for now we focus on single entry insertion and pattern analysis.
+
+
+# ─────────────────────────────────────────────
+# ENDPOINT 2 — BULK INSERT
+# ─────────────────────────────────────────────
+
 @router.post(
     "/diary/bulk-entry",
     summary="Insert multiple diary entries at once",
@@ -77,23 +82,21 @@ def insert_bulk_diary_entries(request: list[DiaryEntryRequest]):
     }
 
 
-
 # ─────────────────────────────────────────────
-# ENDPOINT 2 — ANALYSE PATTERNS
+# ENDPOINT 3 — ANALYSE PATTERNS (HTGPS)
 # ─────────────────────────────────────────────
 
 @router.post(
     "/analyse/{userId}",
     response_model=AnalyseResponse,
-    summary="Automatically detect behavioral patterns for a user",
+    summary="Automatically detect behavioral patterns using HTGPS",
 )
 def analyse_patterns(userId: str):
     """
-    userId is automatically filled from localStorage
-    when user clicks Analyse My Patterns button.
-    Fetches user graph from AuraDB.
-    Runs trigger-outcome frequency counting in Python.
-    Returns explainable pattern insights.
+    Runs the full HTGPS pipeline:
+    frequency counting + DFS + Louvain + FFT.
+    Saves detected patterns back to AuraDB
+    as PatternInsight nodes.
     """
     try:
         if not userId:
@@ -102,40 +105,37 @@ def analyse_patterns(userId: str):
                 detail="userId is required"
             )
 
-        # Run pattern detection
         patterns = pattern_engine.analyse(userId)
 
         if not patterns:
             return AnalyseResponse(
-                userId             = userId,
-                totalPatternsFound = 0,
-                patterns           = [],
-                message            = "No patterns found. Add more diary entries to discover patterns.",
+                userId              = userId,
+                totalPatternsFound  = 0,
+                patterns            = [],
+                message             = f"No patterns found for user {userId}.",
             )
 
-        # Convert to PatternResult models
+        # Dynamically map ALL fields declared in
+        # PatternResult, including dfsScore,
+        # louvainScore, fftScore, htgpsScore,
+        # and all explanation fields.
         pattern_results = [
-            PatternResult(
-                insightText          = p["insightText"],
-                trigger              = p["trigger"],
-                outcome              = p["outcome"],
-                matchedCount         = p["matchedCount"],
-                totalTriggerCount    = p["totalTriggerCount"],
-                confidencePercentage = p["confidencePercentage"],
-                patternLevel         = p["patternLevel"],
-                evidenceDates        = p["evidenceDates"],
-            )
+            PatternResult(**{
+                field: p.get(field)
+                for field in PatternResult.model_fields.keys()
+            })
             for p in patterns
         ]
 
-        # Save detected patterns to AuraDB as PatternInsight nodes
+        # Save patterns to AuraDB as
+        # PatternInsight nodes
         graph_builder.save_pattern_insights(userId, patterns)
 
         return AnalyseResponse(
-            userId             = userId,
-            totalPatternsFound = len(pattern_results),
-            patterns           = pattern_results,
-            message            = f"Successfully detected {len(pattern_results)} pattern(s) for user {userId}",
+            userId              = userId,
+            totalPatternsFound  = len(pattern_results),
+            patterns            = pattern_results,
+            message             = f"Successfully detected {len(pattern_results)} pattern(s) for user {userId}",
         )
 
     except HTTPException:
@@ -149,7 +149,7 @@ def analyse_patterns(userId: str):
 
 
 # ─────────────────────────────────────────────
-# ENDPOINT 3 — GET USER DIARY INFO
+# ENDPOINT 4 — GET USER DIARY INFO
 # ─────────────────────────────────────────────
 
 @router.get(
@@ -176,8 +176,9 @@ def get_user_entries(userId: str):
             detail=f"Failed to fetch entries: {str(e)}"
         )
 
+
 # ─────────────────────────────────────────────
-# ENDPOINT — GET SAVED PATTERNS FROM GRAPH
+# ENDPOINT 5 — GET SAVED PATTERNS FROM GRAPH
 # ─────────────────────────────────────────────
 
 @router.get(
