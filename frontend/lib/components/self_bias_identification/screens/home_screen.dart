@@ -17,6 +17,7 @@ import 'package:frontend/components/self_bias_identification/screens/my_location
 import 'package:frontend/components/self_bias_identification/services/location_service.dart';
 import 'package:frontend/components/self_bias_identification/services/sensor_data_service.dart';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
+import 'package:frontend/main.dart' show routeObserver;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -27,7 +28,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   // ============================================================
   // TRUTHLENS DESIGN SYSTEM
   // ============================================================
@@ -102,6 +103,30 @@ class _HomeScreenState extends State<HomeScreen> {
     _checkUsageAccessSetup()
         .then((_) => _checkAccessibilitySetup())
         .then((_) => _checkLocationsSetup());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  // Fires when a route pushed on top of this screen is popped and this
+  // screen becomes visible again. Needed because the facial-capture ->
+  // analyzing -> result flow uses pushReplacement at each step, which
+  // resolves the ORIGINAL push's Future as soon as the first replacement
+  // happens — long before the analysis actually finishes and saves — so
+  // a plain `Navigator.push(...).then((_) => _loadData())` reloads too
+  // early and never fires again when the user actually comes back.
+  @override
+  void didPopNext() {
+    _loadData();
   }
 
   // ============================================================

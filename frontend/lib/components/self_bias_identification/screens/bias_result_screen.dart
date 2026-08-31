@@ -1,9 +1,7 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/components/self_bias_identification/screens/weekly_trends_screen.dart';
 import 'package:frontend/components/self_bias_identification/widgets/gradient_ring_painter.dart';
-import 'package:frontend/components/self_bias_identification/widgets/tilt_card.dart';
 
 class BiasResultScreen extends StatefulWidget {
   final Map<String, dynamic> result;
@@ -13,53 +11,14 @@ class BiasResultScreen extends StatefulWidget {
   State<BiasResultScreen> createState() => _BiasResultScreenState();
 }
 
-class _BiasResultScreenState extends State<BiasResultScreen>
-    with SingleTickerProviderStateMixin {
+class _BiasResultScreenState extends State<BiasResultScreen> {
   static const _accent = Color(0xFF7B6EFF);
   static const _accent2 = Color(0xFFB2A8FF);
   static const _green = Color(0xFF4ADE80);
   static const _red = Color(0xFFFF6B6B);
   static const _orange = Color(0xFFFFB74D);
   static const _blue = Color(0xFF60A5FA);
-
-  late final AnimationController _entrance;
-
-  @override
-  void initState() {
-    super.initState();
-    _entrance = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 850),
-    )..forward();
-  }
-
-  @override
-  void dispose() {
-    _entrance.dispose();
-    super.dispose();
-  }
-
-  /// Fades + slides each top-level section in with a slight stagger,
-  /// so the screen reveals itself instead of popping in all at once.
-  Widget _staggered(int index, int total, Widget child) {
-    final start = (index / total) * 0.55;
-    final end = (start + 0.45).clamp(0.0, 1.0);
-    final animation = CurvedAnimation(
-      parent: _entrance,
-      curve: Interval(start, end, curve: Curves.easeOutCubic),
-    );
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, c) => Opacity(
-        opacity: animation.value,
-        child: Transform.translate(
-          offset: Offset(0, (1 - animation.value) * 22),
-          child: c,
-        ),
-      ),
-      child: child,
-    );
-  }
+  static const _cardColor = Color(0xFF141428);
 
   @override
   Widget build(BuildContext context) {
@@ -86,29 +45,23 @@ class _BiasResultScreenState extends State<BiasResultScreen>
     final badgeColor = isAccurate ? _green : _red;
 
     final sections = <Widget>[
-      TiltCard(
-        borderRadius: BorderRadius.circular(24),
-        child: _heroCard(
-          isAccurate: isAccurate,
-          badgeColor: badgeColor,
-          biasType: biasType,
-          confidence: (confidence as num).toDouble(),
-          pasScore: (pasScore as num).toInt(),
-          pasLevel: pasLevel.toString(),
-          pasColor: pasColor,
-          comparison: comparison,
-          isRecurring: isRecurring,
-          streakCount: streakCount,
-        ),
+      _heroCard(
+        isAccurate: isAccurate,
+        badgeColor: badgeColor,
+        biasType: biasType,
+        confidence: (confidence as num).toDouble(),
+        pasScore: (pasScore as num).toInt(),
+        pasLevel: pasLevel.toString(),
+        pasColor: pasColor,
+        comparison: comparison,
+        isRecurring: isRecurring,
+        streakCount: streakCount,
       ),
       if (explanation.isNotEmpty) _explanationCard(explanation),
-      TiltCard(
-        borderRadius: BorderRadius.circular(24),
-        child: _facialCheckCard(
-          comparison['facial_emotion'] as Map<String, dynamic>?,
-          indicators.any(
-            (ind) => ind is Map && ind['type'] == 'facial_stress_mismatch',
-          ),
+      _facialCheckCard(
+        comparison['facial_emotion'] as Map<String, dynamic>?,
+        indicators.any(
+          (ind) => ind is Map && ind['type'] == 'facial_stress_mismatch',
         ),
       ),
       if (indicators.isNotEmpty) _indicatorsCard(indicators),
@@ -120,41 +73,18 @@ class _BiasResultScreenState extends State<BiasResultScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E14),
-      extendBodyBehindAppBar: true,
       appBar: _glassAppBar(context, result['entry_id']?.toString() ?? ''),
       body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: const Alignment(-0.6, -1.05),
-            radius: 1.3,
-            colors: [_accent.withValues(alpha: 0.16), Colors.transparent],
-            stops: const [0.0, 0.6],
-          ),
-        ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: const Alignment(1.1, 1.2),
-              radius: 1.1,
-              colors: [pasColor.withValues(alpha: 0.10), Colors.transparent],
-              stops: const [0.0, 0.65],
-            ),
-          ),
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              MediaQuery.of(context).padding.top + 92,
-              16,
-              30,
-            ),
-            child: Column(
-              children: [
-                for (int i = 0; i < sections.length; i++) ...[
-                  _staggered(i, sections.length, sections[i]),
-                  if (i != sections.length - 1) const SizedBox(height: 16),
-                ],
+        decoration: const BoxDecoration(color: Color(0xFF0A0E14)),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 30),
+          child: Column(
+            children: [
+              for (int i = 0; i < sections.length; i++) ...[
+                sections[i],
+                if (i != sections.length - 1) const SizedBox(height: 16),
               ],
-            ),
+            ],
           ),
         ),
       ),
@@ -166,22 +96,19 @@ class _BiasResultScreenState extends State<BiasResultScreen>
   PreferredSizeWidget _glassAppBar(BuildContext context, String entryId) {
     return PreferredSize(
       preferredSize: const Size.fromHeight(kToolbarHeight + 8),
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A0E14).withValues(alpha: 0.55),
-              border: const Border(
-                bottom: BorderSide(color: Color(0x14FFFFFF)),
-              ),
-            ),
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Row(
-                  children: [
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF10141F),
+          border: Border(
+            bottom: BorderSide(color: Color(0x14FFFFFF)),
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Row(
+              children: [
                     IconButton(
                       icon: const Icon(
                         Icons.arrow_back_ios_new,
@@ -248,8 +175,6 @@ class _BiasResultScreenState extends State<BiasResultScreen>
               ),
             ),
           ),
-        ),
-      ),
     );
   }
 
@@ -485,75 +410,63 @@ class _BiasResultScreenState extends State<BiasResultScreen>
   Widget _pasGauge(int pasScore, String pasLevel, Color pasColor) {
     return Column(
       children: [
-        TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0, end: pasScore / 100),
-          duration: const Duration(milliseconds: 1300),
-          curve: Curves.easeOutCubic,
-          builder: (context, animatedProgress, _) {
-            return Stack(
-              alignment: Alignment.center,
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: pasColor.withValues(alpha: 0.30),
+                    blurRadius: 50,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(
+              width: 140,
+              height: 140,
+              child: CustomPaint(painter: RingTicksPainter()),
+            ),
+            SizedBox(
+              width: 104,
+              height: 104,
+              child: CustomPaint(
+                painter: GradientRingPainter(
+                  progress: pasScore / 100,
+                  colors: [pasColor.withValues(alpha: 0.75), pasColor],
+                  strokeWidth: 8.5,
+                  glowDot: true,
+                ),
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: pasColor.withValues(alpha: 0.30),
-                        blurRadius: 50,
-                        spreadRadius: 2,
-                      ),
-                    ],
+                Text(
+                  '$pasScore',
+                  style: GoogleFonts.outfit(
+                    fontSize: 36,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                    color: pasColor,
                   ),
                 ),
-                const SizedBox(
-                  width: 140,
-                  height: 140,
-                  child: CustomPaint(painter: RingTicksPainter()),
-                ),
-                SizedBox(
-                  width: 104,
-                  height: 104,
-                  child: CustomPaint(
-                    painter: GradientRingPainter(
-                      progress: animatedProgress,
-                      colors: [pasColor.withValues(alpha: 0.75), pasColor],
-                      strokeWidth: 8.5,
-                      glowDot: true,
-                    ),
+                const SizedBox(height: 4),
+                Text(
+                  'out of 100',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: Colors.white.withValues(alpha: 0.4),
                   ),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0, end: pasScore.toDouble()),
-                      duration: const Duration(milliseconds: 1300),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, value, _) => Text(
-                        '${value.round()}',
-                        style: GoogleFonts.outfit(
-                          fontSize: 36,
-                          height: 1,
-                          fontWeight: FontWeight.w800,
-                          color: pasColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'out of 100',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: Colors.white.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ],
                 ),
               ],
-            );
-          },
+            ),
+          ],
         ),
         const SizedBox(height: 14),
         Container(
@@ -587,35 +500,22 @@ class _BiasResultScreenState extends State<BiasResultScreen>
   // ==================== Glass Card Primitive ====================
 
   Widget _glassCard({required Widget child, EdgeInsetsGeometry? padding}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: padding ?? const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.025),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 32,
-                offset: const Offset(0, 16),
-              ),
-            ],
+    return Container(
+      width: double.infinity,
+      padding: padding ?? const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 32,
+            offset: const Offset(0, 16),
           ),
-          child: child,
-        ),
+        ],
       ),
+      child: child,
     );
   }
 
@@ -954,80 +854,64 @@ class _BiasResultScreenState extends State<BiasResultScreen>
   // ==================== Reflection ====================
 
   Widget _reflectionCard(String reflection) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                _orange.withValues(alpha: 0.11),
-                Colors.white.withValues(alpha: 0.025),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border(
-              left: const BorderSide(color: _orange, width: 4),
-              top: BorderSide(color: Colors.white.withValues(alpha: 0.09)),
-              right: BorderSide(color: Colors.white.withValues(alpha: 0.09)),
-              bottom: BorderSide(color: Colors.white.withValues(alpha: 0.09)),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 32,
-                offset: const Offset(0, 16),
-              ),
-            ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(_orange.withValues(alpha: 0.11), _cardColor),
+        borderRadius: BorderRadius.circular(24),
+        border: const Border(
+          left: BorderSide(color: _orange, width: 4),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 32,
+            offset: const Offset(0, 16),
           ),
-          child: Stack(
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -6,
+            top: -14,
+            child: Icon(
+              Icons.format_quote_rounded,
+              size: 64,
+              color: _orange.withValues(alpha: 0.10),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Positioned(
-                right: -6,
-                top: -14,
-                child: Icon(
-                  Icons.format_quote_rounded,
-                  size: 64,
-                  color: _orange.withValues(alpha: 0.10),
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.auto_awesome_rounded, size: 13, color: _orange),
-                      const SizedBox(width: 6),
-                      Text(
-                        'TRUTHLENS AI REFLECTION',
-                        style: GoogleFonts.outfit(
-                          fontSize: 11,
-                          color: _orange,
-                          letterSpacing: 1,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
+                  const Icon(Icons.auto_awesome_rounded, size: 13, color: _orange),
+                  const SizedBox(width: 6),
                   Text(
-                    reflection,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.6,
-                      color: Colors.white70,
+                    'TRUTHLENS AI REFLECTION',
+                    style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      color: _orange,
+                      letterSpacing: 1,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 14),
+              Text(
+                reflection,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.6,
+                  color: Colors.white70,
+                ),
+              ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }

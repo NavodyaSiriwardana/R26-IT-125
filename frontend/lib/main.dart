@@ -6,6 +6,13 @@ import 'firebase_options.dart';
 import 'components/task_prioritization/services/notification_service.dart';
 import 'screens/splash_screen.dart';
 
+// Lets any screen re-run its data load when it becomes visible again after
+// a nested flow finishes several routes deep (e.g. facial capture ->
+// analyzing -> result), since those intermediate screens use
+// pushReplacement and resolve the originating push's Future immediately
+// on the FIRST replacement — long before the flow actually completes.
+final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -25,6 +32,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      navigatorObservers: [routeObserver],
 
       theme: ThemeData(
         brightness: Brightness.dark,
