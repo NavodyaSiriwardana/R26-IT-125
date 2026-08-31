@@ -82,23 +82,22 @@ class DiaryEntryResponse(BaseModel):
 # ─────────────────────────────────────────────
 
 class PatternResult(BaseModel):
-    # Explainable sentence
     insightText: str
-
-    # Trigger and outcome
     trigger: str
     outcome: str
-
-    # Counts
     matchedCount: int
     totalTriggerCount: int
-
-    # Confidence
     confidencePercentage: float
     patternLevel: str
-
-    # Evidence — dates from relationship entryDateTime values
-    evidenceDates: List[str]
+    evidenceDates: list[str]
+    dfsScore: Optional[float] = None
+    louvainScore: Optional[float] = None
+    fftScore: Optional[float] = None
+    htgpsScore: Optional[float] = None
+    dfsExplanation: Optional[str] = None
+    louvainExplanation: Optional[str] = None
+    fftExplanation: Optional[str] = None
+    analysisVersion: Optional[str] = None
 
 
 # ─────────────────────────────────────────────
