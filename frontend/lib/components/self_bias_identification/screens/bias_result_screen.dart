@@ -17,8 +17,29 @@ class _BiasResultScreenState extends State<BiasResultScreen> {
   static const _green = Color(0xFF4ADE80);
   static const _red = Color(0xFFFF6B6B);
   static const _orange = Color(0xFFFFB74D);
+  static const _amber = Color(0xFFFF8A50);
   static const _blue = Color(0xFF60A5FA);
   static const _cardColor = Color(0xFF141428);
+
+  /// Colors the gauge/pill directly off the level text pas_calculator.py
+  /// sends (rather than re-deriving separate score thresholds here), so
+  /// "Moderate Bias" and "Severe Bias" always render as visually distinct
+  /// colors instead of both collapsing onto the same red.
+  static Color _levelColor(String level) {
+    switch (level) {
+      case 'Excellent Alignment':
+      case 'Good Alignment':
+        return _green;
+      case 'Mild Bias':
+        return _orange;
+      case 'Moderate Bias':
+        return _amber;
+      case 'Severe Bias':
+        return _red;
+      default:
+        return _orange;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,11 +58,7 @@ class _BiasResultScreenState extends State<BiasResultScreen> {
     final streakCount = (result['streak_count'] as num?)?.toInt() ?? 1;
 
     final bool isAccurate = biasType == 'accurate_perception';
-    final pasColor = pasScore >= 70
-        ? _green
-        : pasScore >= 50
-        ? _orange
-        : _red;
+    final pasColor = _levelColor(pasLevel.toString());
     final badgeColor = isAccurate ? _green : _red;
 
     final sections = <Widget>[
@@ -238,23 +255,23 @@ class _BiasResultScreenState extends State<BiasResultScreen> {
           Text(
             _formatBiasType(biasType),
             style: GoogleFonts.outfit(
-              fontSize: 21,
+              fontSize: 27,
               fontWeight: FontWeight.w800,
               height: 1.15,
               letterSpacing: -0.3,
               color: Colors.white,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 7),
           Row(
             children: [
-              Icon(Icons.bolt_rounded, size: 15, color: _accent2),
+              Icon(Icons.bolt_rounded, size: 16, color: _accent2),
               const SizedBox(width: 3),
               Text(
                 '${(confidence * 100).toStringAsFixed(1)}% confidence',
                 style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 16,
+                  color: Colors.white.withValues(alpha: 0.65),
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -345,7 +362,7 @@ class _BiasResultScreenState extends State<BiasResultScreen> {
           Text(
             isAccurate ? 'Good Alignment' : 'Bias Detected',
             style: GoogleFonts.outfit(
-              fontSize: 13,
+              fontSize: 16,
               color: badgeColor,
               fontWeight: FontWeight.w600,
             ),
@@ -420,9 +437,9 @@ class _BiasResultScreenState extends State<BiasResultScreen> {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: pasColor.withValues(alpha: 0.30),
-                    blurRadius: 50,
-                    spreadRadius: 2,
+                    color: pasColor.withValues(alpha: 0.16),
+                    blurRadius: 28,
+                    spreadRadius: 0,
                   ),
                 ],
               ),
@@ -450,27 +467,28 @@ class _BiasResultScreenState extends State<BiasResultScreen> {
                 Text(
                   '$pasScore',
                   style: GoogleFonts.outfit(
-                    fontSize: 36,
+                    fontSize: 50,
                     height: 1,
                     fontWeight: FontWeight.w800,
                     color: pasColor,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
                   'out of 100',
                   style: TextStyle(
-                    fontSize: 10.5,
-                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.55),
                   ),
                 ),
               ],
             ),
           ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
             color: pasColor.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(20),
@@ -479,18 +497,19 @@ class _BiasResultScreenState extends State<BiasResultScreen> {
           child: Text(
             pasLevel.isEmpty ? 'Analyzed' : pasLevel,
             style: GoogleFonts.outfit(
-              fontSize: 12.5,
+              fontSize: 16.5,
               fontWeight: FontWeight.w700,
               color: pasColor,
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Text(
           'SAS Score · Target 70+',
           style: TextStyle(
-            fontSize: 11,
-            color: Colors.white.withValues(alpha: 0.35),
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: Colors.white.withValues(alpha: 0.5),
           ),
         ),
       ],

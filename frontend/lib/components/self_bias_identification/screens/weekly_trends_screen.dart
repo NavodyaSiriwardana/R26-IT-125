@@ -19,7 +19,6 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
   double _avgPas = 0;
   int _totalEntries = 0;
   int _biasCount = 0;
-  Map<String, int> _biasFrequency = {};
   List<int> _pasScores = [];
   List<DateTime> _pasDates = [];
   List<Map<String, dynamic>> _moodPatterns = [];
@@ -55,7 +54,6 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
 
         double total = 0;
         int biasCount = 0;
-        Map<String, int> freq = {};
         List<int> scores = [];
         List<DateTime> dates = [];
         List<Map<String, dynamic>?> facialHistory = [];
@@ -66,7 +64,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           total += pas;
           scores.add(pas);
           final entryId = entry['entry_id']?.toString() ?? '';
-          final ts = int.tryParse(entryId.replaceAll('ENT_', ''));
+          final ts = int.tryParse(entryId.replaceAll(RegExp(r'\D'), ''));
           dates.add(ts != null
               ? DateTime.fromMillisecondsSinceEpoch(ts)
               : DateTime.now());
@@ -77,11 +75,6 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           facialHistory.add(
             facial is Map ? Map<String, dynamic>.from(facial) : null,
           );
-
-          final bias = entry['primary_bias']?['bias_type'] ?? '';
-          if (bias.isNotEmpty) {
-            freq[bias] = (freq[bias] ?? 0) + 1;
-          }
 
           final comparison = entry['comparison'] as Map? ?? {};
           final before = comparison['mood_before'] ?? '';
@@ -111,7 +104,6 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           _totalEntries = history.length;
           _avgPas = history.isNotEmpty ? total / history.length : 0;
           _biasCount = biasCount;
-          _biasFrequency = freq;
           _pasScores = scores.take(7).toList().reversed.toList();
           _pasDates = dates.take(7).toList().reversed.toList();
           _facialHistory = facialHistory.take(7).toList().reversed.toList();
@@ -145,11 +137,11 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           children: [
             Text(
               'Weekly Report',
-              style: GoogleFonts.outfit(fontSize: 19, fontWeight: FontWeight.w700),
+              style: GoogleFonts.outfit(fontSize: 21, fontWeight: FontWeight.w700),
             ),
             const Text(
               'Last 7 entries',
-              style: TextStyle(fontSize: 12, color: Colors.white54),
+              style: TextStyle(fontSize: 13.5, color: Colors.white54),
             ),
           ],
         ),
@@ -225,11 +217,11 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
 
                   const SizedBox(height: 24),
 
-                  if (_biasFrequency.isNotEmpty)
+                  if (_pasScores.isNotEmpty)
                     _modernCard(
                       title: 'Bias Frequency',
-                      subtitle: 'All time',
-                      child: _biasFreqChart(),
+                      subtitle: 'Last 7 entries',
+                      child: _biasFrequencyStrip(),
                     ),
 
                   const SizedBox(height: 24),
@@ -273,7 +265,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           Text(
             value,
             style: GoogleFonts.outfit(
-              fontSize: 28,
+              fontSize: 32,
               fontWeight: FontWeight.w700,
               color: accent,
             ),
@@ -282,7 +274,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           Text(
             label,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 14.5,
               color: Colors.white.withOpacity(0.55),
               fontWeight: FontWeight.w500,
             ),
@@ -327,14 +319,14 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
               Text(
                 title,
                 style: GoogleFonts.outfit(
-                  fontSize: 16,
+                  fontSize: 18,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               Text(
                 subtitle,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 13.5,
                   color: Colors.white.withOpacity(0.4),
                 ),
               ),
@@ -413,7 +405,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
         children: [
           Text(
             'PAS Score Trend',
-            style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
+            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 18),
           if (hasScores) ...[
@@ -424,7 +416,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
                 Text(
                   '$latest',
                   style: GoogleFonts.outfit(
-                    fontSize: 40,
+                    fontSize: 48,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
@@ -432,7 +424,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
                 const SizedBox(width: 10),
                 if (delta != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: deltaColor.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(20),
@@ -442,14 +434,14 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
                       children: [
                         Icon(
                           delta >= 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-                          size: 11,
+                          size: 12.5,
                           color: deltaColor,
                         ),
                         const SizedBox(width: 3),
                         Text(
                           '${delta.abs()}',
                           style: GoogleFonts.outfit(
-                            fontSize: 12,
+                            fontSize: 13.5,
                             fontWeight: FontWeight.w700,
                             color: deltaColor,
                           ),
@@ -461,7 +453,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
             ),
             Text(
               delta == null ? 'Last ${_pasScores.length} entries' : 'vs previous entry',
-              style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.45)),
+              style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.45)),
             ),
             const SizedBox(height: 18),
           ],
@@ -509,7 +501,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
         Text(
           label,
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.6,
             color: Colors.white.withOpacity(0.4),
@@ -519,7 +511,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
         Text(
           value,
           style: GoogleFonts.outfit(
-            fontSize: 15,
+            fontSize: 17,
             fontWeight: FontWeight.w700,
             color: color,
           ),
@@ -604,69 +596,112 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
     const negativeEmotions = ['sad', 'angry', 'fear', 'disgust'];
     final isNegative = negativeEmotions.contains(dominant);
     final color = isNegative ? const Color(0xFFFF6B6B) : const Color(0xFF4ADE80);
-    final emoji = isNegative ? '😔' : '😊';
+    final emoji = isNegative ? '😢' : '😊';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(emoji, style: const TextStyle(fontSize: 16, height: 1)),
-        const SizedBox(height: 4),
+        SizedBox(
+          width: 30,
+          height: 34,
+          child: Stack(
+            alignment: Alignment.topCenter,
+            clipBehavior: Clip.none,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 28, height: 1)),
+              if (isNegative) const _FallingTear(),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
         Container(
-          width: 4,
-          height: 4,
+          width: 5,
+          height: 5,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 5),
         Text(
           dayLabel,
-          style: TextStyle(fontSize: 8, color: Colors.white.withValues(alpha: 0.4)),
+          style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.4)),
         ),
       ],
     );
   }
 
-  Widget _biasFreqChart() {
-    final sorted = _biasFrequency.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final maxVal = sorted.isNotEmpty ? sorted.first.value.toDouble() : 1;
+  // A row of colored columns, one per recent entry (oldest to newest,
+  // left to right) — green for accurate/good, orange for mild bias, red
+  // for moderate/severe, dark grey for a day with no entry. Reads at a
+  // glance like a usage/battery graph's daily bars, instead of the
+  // previous per-bias-type progress-bar list.
+  Widget _biasFrequencyStrip() {
+    const slots = 7;
+    final scores = _pasScores.length > slots
+        ? _pasScores.sublist(_pasScores.length - slots)
+        : _pasScores;
+    final padding = slots - scores.length;
 
     return Column(
-      children: sorted.take(5).map((entry) {
-        final color = entry.key == 'accurate_perception'
-            ? const Color(0xFF4ADE80)
-            : const Color(0xFFFFB74D);
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            for (int i = 0; i < padding; i++) _freqBar(null),
+            for (final score in scores) _freqBar(score),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 14,
+          runSpacing: 6,
+          children: [
+            _freqLegendItem(const Color(0xFF4ADE80), 'Good'),
+            _freqLegendItem(const Color(0xFFFFB74D), 'Mild'),
+            _freqLegendItem(const Color(0xFFFF6B6B), 'Bias'),
+            _freqLegendItem(Colors.white.withValues(alpha: 0.2), 'No entry'),
+          ],
+        ),
+      ],
+    );
+  }
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 110,
-                child: Text(
-                  _formatShort(entry.key),
-                  style: const TextStyle(fontSize: 13, color: Colors.white70),
-                ),
-              ),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: LinearProgressIndicator(
-                    value: entry.value / maxVal,
-                    backgroundColor: Colors.white.withOpacity(0.08),
-                    valueColor: AlwaysStoppedAnimation(color),
-                    minHeight: 8,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                '${entry.value}x',
-                style: const TextStyle(fontSize: 13, color: Colors.white54),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+  Widget _freqLegendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11.5, color: Colors.white.withValues(alpha: 0.5)),
+        ),
+      ],
+    );
+  }
+
+  Widget _freqBar(int? score) {
+    final hasEntry = score != null;
+    final color = !hasEntry
+        ? Colors.white.withValues(alpha: 0.08)
+        : score >= 70
+        ? const Color(0xFF4ADE80)
+        : score >= 50
+        ? const Color(0xFFFFB74D)
+        : const Color(0xFFFF6B6B);
+    final height = hasEntry ? 24.0 + (score / 100) * 48.0 : 24.0;
+
+    return Container(
+      width: 26,
+      height: height,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+      ),
     );
   }
 
@@ -689,20 +724,20 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
             children: [
               Text(
                 before,
-                style: const TextStyle(fontSize: 14, color: Colors.white70),
+                style: const TextStyle(fontSize: 15.5, color: Colors.white70),
               ),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8),
                 child: Icon(
                   Icons.arrow_right_alt,
                   color: Colors.white38,
-                  size: 18,
+                  size: 20,
                 ),
               ),
               Text(
                 after,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15.5,
                   fontWeight: FontWeight.w600,
                   color: isPositive
                       ? const Color(0xFF4ADE80)
@@ -721,7 +756,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
                 ),
                 child: Text(
                   '${count}x',
-                  style: const TextStyle(fontSize: 12, color: Colors.white60),
+                  style: const TextStyle(fontSize: 13.5, color: Colors.white60),
                 ),
               ),
             ],
@@ -731,21 +766,54 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
     );
   }
 
-  String _formatShort(String type) {
-    switch (type) {
-      case 'productivity_overestimation':
-        return 'Productivity';
-      case 'focus_mismatch':
-        return 'Focus Mismatch';
-      case 'context_mismatch':
-        return 'Context';
-      case 'stress_underestimation':
-        return 'Stress';
-      case 'accurate_perception':
-        return 'Accurate';
-      default:
-        return type.replaceAll('_', ' ').toUpperCase();
-    }
+}
+
+// ==================== FALLING TEAR (sad/negative facial check days) ====================
+// A small drop that repeatedly falls and fades beneath a sad-emotion day's
+// emoji — a quiet motion cue instead of a static face, since a whole week
+// of unhappy days is exactly the kind of thing this screen should make hit
+// harder than a still icon would.
+class _FallingTear extends StatefulWidget {
+  const _FallingTear();
+
+  @override
+  State<_FallingTear> createState() => _FallingTearState();
+}
+
+class _FallingTearState extends State<_FallingTear>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        return Positioned(
+          top: 20 + t * 12,
+          child: Opacity(
+            opacity: (1 - t).clamp(0.0, 1.0),
+            child: const Text('💧', style: TextStyle(fontSize: 9, height: 1)),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -788,42 +856,6 @@ class _LineChartPainter extends CustomPainter {
     const bottomAxisHeight = 20.0;
     final chartW = w - rightAxisWidth;
     final h = size.height - bottomAxisHeight;
-
-    // Paints — the line's color shifts along its length (orange where low,
-    // green where strong) instead of one flat purple regardless of value.
-    final linePaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [
-          Color(0xFFFFB74D),
-          Color(0xFF7B6EFF),
-          Color(0xFF4ADE80),
-          Color(0xFF4ADE80),
-        ],
-        stops: [0.0, 0.35, 0.7, 1.0],
-      ).createShader(Rect.fromLTWH(0, 0, chartW, h))
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final shadowPaint = Paint()
-      ..color = const Color(0xFF4ADE80).withOpacity(0.24)
-      ..strokeWidth = 7
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        colors: [
-          const Color(0xFF7B6EFF).withOpacity(0.30),
-          const Color(0xFF7B6EFF).withOpacity(0.10),
-          const Color(0xFF7B6EFF).withOpacity(0.0),
-        ],
-        stops: const [0.0, 0.55, 1.0],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTWH(0, 0, chartW, h));
 
     final gridPaint = Paint()
       ..color = Colors.white.withOpacity(0.05)
@@ -888,7 +920,10 @@ class _LineChartPainter extends CustomPainter {
     canvas.drawLine(Offset(0, lowY), Offset(chartW, lowY), gridPaint);
     axisLabel('40', lowY);
 
-    // Points
+    // Points — bar-chart layout (evenly spaced columns, like a battery/
+    // usage graph) instead of a continuous curve. x is each bar's center;
+    // y is the top of its column, kept as the reference point the
+    // "latest" crosshair/glow/tooltip below anchors to.
     final points = <Offset>[];
     for (int i = 0; i < scores.length; i++) {
       final x = i * chartW / (scores.length - 1);
@@ -896,49 +931,42 @@ class _LineChartPainter extends CustomPainter {
       points.add(Offset(x, y));
     }
 
-    // Catmull-Rom spline through every real point — a properly smooth,
-    // continuous curve (rather than a piecewise midpoint bezier), matching
-    // the fluid line quality of a real stock-chart renderer.
-    Path smoothPath(List<Offset> pts) {
-      final p = Path()..moveTo(pts.first.dx, pts.first.dy);
-      for (int i = 0; i < pts.length - 1; i++) {
-        final p0 = i == 0 ? pts[i] : pts[i - 1];
-        final p1 = pts[i];
-        final p2 = pts[i + 1];
-        final p3 = i + 2 < pts.length ? pts[i + 2] : p2;
-        final cp1 = Offset(p1.dx + (p2.dx - p0.dx) / 6, p1.dy + (p2.dy - p0.dy) / 6);
-        final cp2 = Offset(p2.dx - (p3.dx - p1.dx) / 6, p2.dy - (p3.dy - p1.dy) / 6);
-        p.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, p2.dx, p2.dy);
-      }
-      return p;
+    // Dense waveform of thin bars (like a battery/usage-history graph)
+    // instead of one wide bar per real entry — interpolated between the
+    // real data points so 7 entries still fill the chart the way a real
+    // usage graph's many-hours-of-data would.
+    final barBaseline = h - 10;
+    const barCount = 56;
+    const barGap = 2.0;
+    final barW = (chartW / barCount) - barGap;
+    for (int b = 0; b < barCount; b++) {
+      final frac = b / (barCount - 1); // 0..1 across the chart
+      final pos = frac * (scores.length - 1); // maps to fractional index
+      final i0 = pos.floor().clamp(0, scores.length - 1);
+      final i1 = (i0 + 1).clamp(0, scores.length - 1);
+      final segT = pos - i0;
+      final score = scores[i0] + (scores[i1] - scores[i0]) * segT;
+
+      final x = frac * chartW;
+      final barTop = h * (1 - score / 100) - 10;
+      final isRecent = frac >= 0.92; // last sliver of the chart, like the
+      // reference's highlighted final bars representing "now".
+      final barColor = isRecent ? const Color(0xFFFFB74D) : const Color(0xFF2DD9BE);
+      final rect = RRect.fromRectAndCorners(
+        Rect.fromLTRB(x - barW / 2, barTop, x + barW / 2, barBaseline),
+        topLeft: const Radius.circular(2),
+        topRight: const Radius.circular(2),
+      );
+      canvas.drawRRect(rect, Paint()..color = barColor.withOpacity(0.85));
     }
 
-    final curve = smoothPath(points);
-
-    // Shadow line (soft glow beneath the main stroke)
-    canvas.drawPath(curve, shadowPaint);
-
-    // Fill area — reuses the exact same curve so the fill edge and the
-    // line never diverge.
-    final fillPath = Path.from(curve)
-      ..lineTo(points.last.dx, h - 10)
-      ..lineTo(points.first.dx, h - 10)
-      ..close();
-    canvas.drawPath(fillPath, fillPaint);
-
-    // Main smooth line
-    canvas.drawPath(curve, linePaint);
-
-    // Dots — every real entry gets a marker, but only the latest (current)
-    // one carries the glow halo, matching how a stock app emphasizes just
-    // the current price and keeps history markers understated.
+    // Only the latest (current) bar carries the glow/crosshair/tooltip,
+    // matching how a stock app emphasizes just the current price and
+    // keeps history bars understated.
     for (int i = 0; i < points.length; i++) {
-      final score = scores[i];
-      final color = score >= 70
-          ? const Color(0xFF4ADE80)
-          : score >= 50
-          ? const Color(0xFFFFB74D)
-          : const Color(0xFFFF6B6B);
+      // Matches the bar chart's own two-tone palette (teal base, amber
+      // "now" highlight) instead of a third traffic-light color.
+      const color = Color(0xFFFFB74D);
       final isLatest = i == points.length - 1;
 
       if (isLatest) {
@@ -1004,9 +1032,6 @@ class _LineChartPainter extends CustomPainter {
           canvas,
           Offset(tooltipLeft + tooltipPadding, tooltipTop + tooltipPadding * 0.6),
         );
-      } else {
-        canvas.drawCircle(points[i], 3.2, Paint()..color = color);
-        canvas.drawCircle(points[i], 1.3, Paint()..color = const Color(0xFF0A0E14));
       }
     }
 
@@ -1024,9 +1049,10 @@ class _LineChartPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
+      final labelX = (points[i].dx - tp.width / 2).clamp(0.0, chartW - tp.width);
       tp.paint(
         canvas,
-        Offset(points[i].dx - tp.width / 2, h + bottomAxisHeight - 16),
+        Offset(labelX, h + bottomAxisHeight - 16),
       );
     }
   }

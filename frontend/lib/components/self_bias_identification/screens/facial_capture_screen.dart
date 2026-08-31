@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
 import 'package:http/http.dart' as http;
 import 'package:frontend/app_state.dart';
 import 'package:frontend/components/self_bias_identification/screens/analyzing_screen.dart';
@@ -69,8 +70,8 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
         history.sort((a, b) {
           final aId = a['entry_id']?.toString() ?? '';
           final bId = b['entry_id']?.toString() ?? '';
-          final aTime = int.tryParse(aId.replaceAll('ENT_', '')) ?? 0;
-          final bTime = int.tryParse(bId.replaceAll('ENT_', '')) ?? 0;
+          final aTime = int.tryParse(aId.replaceAll(RegExp(r'\D'), '')) ?? 0;
+          final bTime = int.tryParse(bId.replaceAll(RegExp(r'\D'), '')) ?? 0;
           return bTime.compareTo(aTime);
         });
 
@@ -83,6 +84,26 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
     }
   }
 
+  /// Many Android camera apps (Samsung's especially) save the photo with
+  /// an EXIF orientation tag rather than physically rotating the pixels,
+  /// so the file image_picker hands back can come out sideways when
+  /// displayed or sent to the backend for face detection. This decodes
+  /// the JPEG, bakes the EXIF orientation into the actual pixel data (so
+  /// it reads as "normal" from then on), and overwrites the file.
+  Future<File> _normalizeOrientation(File file) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return file;
+      final upright = img.bakeOrientation(decoded);
+      await file.writeAsBytes(img.encodeJpg(upright, quality: 90));
+    } catch (_) {
+      // Fall through with the original file — better an occasionally
+      // rotated photo than a capture that hard-fails.
+    }
+    return file;
+  }
+
   Future<void> _captureImage() async {
     try {
       final picker = ImagePicker();
@@ -93,8 +114,10 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
       );
       if (photo == null) return;
 
+      final uprightFile = await _normalizeOrientation(File(photo.path));
+
       setState(() {
-        _imageFile = File(photo.path);
+        _imageFile = uprightFile;
         _isAnalyzing = true;
         _errorMessage = null;
         _result = null;

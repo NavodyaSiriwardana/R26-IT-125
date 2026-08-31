@@ -17,11 +17,15 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _calendarVerificationEnabled = false;
+  String _userName = '';
 
   @override
   void initState() {
     super.initState();
     _loadCalendarSetting();
+    LocalStorage.getName().then((name) {
+      if (mounted && name.isNotEmpty) setState(() => _userName = name);
+    });
   }
 
   Future<void> _loadCalendarSetting() async {
@@ -107,8 +111,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     child: Center(
                       child: Text(
-                        AppState.userId.isNotEmpty
-                            ? AppState.userId[0].toUpperCase()
+                        _userName.isNotEmpty
+                            ? _userName[0].toUpperCase()
                             : 'U',
                         style: GoogleFonts.outfit(
                           fontSize: 34,
@@ -120,7 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    AppState.userId,
+                    _userName.isNotEmpty ? _userName : 'User',
                     style: GoogleFonts.outfit(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,

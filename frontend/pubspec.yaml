@@ -38,6 +38,7 @@ dependencies:
 
   # self_bias_identification
   image_picker: ^1.1.2
+  image: ^4.2.0
   app_usage: ^4.1.0
   usage_stats: ^1.3.0
   geolocator: ^10.0.0

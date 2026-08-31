@@ -36,8 +36,8 @@ class _AllEntriesScreenState extends State<AllEntriesScreen> {
         history.sort((a, b) {
           final aId = a['entry_id']?.toString() ?? '';
           final bId = b['entry_id']?.toString() ?? '';
-          final aTime = int.tryParse(aId.replaceAll('ENT_', '')) ?? 0;
-          final bTime = int.tryParse(bId.replaceAll('ENT_', '')) ?? 0;
+          final aTime = int.tryParse(aId.replaceAll(RegExp(r'\D'), '')) ?? 0;
+          final bTime = int.tryParse(bId.replaceAll(RegExp(r'\D'), '')) ?? 0;
           return bTime.compareTo(aTime);
         });
 
@@ -87,14 +87,7 @@ class _AllEntriesScreenState extends State<AllEntriesScreen> {
         ),
       ),
       body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: const Alignment(0.8, -1.1),
-            radius: 1.3,
-            colors: [const Color(0xFF7B6EFF).withOpacity(0.16), Colors.transparent],
-            stops: const [0.0, 0.58],
-          ),
-        ),
+        decoration: const BoxDecoration(color: Color(0xFF0A0E14)),
       child: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF7B6EFF)))
           : _entries.isEmpty
@@ -173,16 +166,15 @@ class _HoverCardState extends State<HoverCard> {
           margin: const EdgeInsets.only(bottom: 12),
           transform: Matrix4.translationValues(0, _isHovered ? -4 : 0, 0),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: _isHovered
-                  ? [widget.color.withOpacity(0.12), Colors.white.withOpacity(0.02)]
-                  : [Colors.white.withOpacity(0.06), Colors.white.withOpacity(0.015)],
-            ),
+            color: _isHovered
+                ? Color.alphaBlend(
+                    widget.color.withOpacity(0.14),
+                    const Color(0xFF141428),
+                  )
+                : const Color(0xFF141428),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: _isHovered ? widget.color.withOpacity(0.5) : Colors.white.withOpacity(0.08),
+              color: _isHovered ? widget.color.withOpacity(0.5) : Colors.white.withOpacity(0.06),
               width: _isHovered ? 1.5 : 1,
             ),
             boxShadow: [
@@ -233,16 +225,29 @@ class _HoverCardState extends State<HoverCard> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
                   decoration: BoxDecoration(
-                    color: widget.color.withOpacity(0.12),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        widget.color,
+                        Color.lerp(widget.color, Colors.black, 0.35)!,
+                      ],
+                    ),
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: widget.color.withOpacity(0.3)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: widget.color.withOpacity(_isHovered ? 0.55 : 0.35),
+                        blurRadius: _isHovered ? 20 : 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
                   child: Text(
                     '${widget.pas}',
                     style: GoogleFonts.outfit(
                       fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: widget.color,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
                     ),
                   ),
                 ),

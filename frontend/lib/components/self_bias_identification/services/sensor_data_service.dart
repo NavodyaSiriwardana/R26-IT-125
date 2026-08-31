@@ -163,10 +163,12 @@ class SensorDataService {
     double socialMediaMinutes = 0;
     double entertainmentMinutes = 0;
     double educationalMinutes = 0;
+    double otherMinutes = 0;
     int appSwitchCount = 0;
     final Map<String, double> educationalBreakdown = {};
     final Map<String, double> entertainmentBreakdown = {};
     final Map<String, double> socialMediaBreakdown = {};
+    final Map<String, double> otherBreakdown = {};
 
     if (!Platform.isAndroid) {
       // app_usage only works on Android; return zeros elsewhere (e.g. web/dev testing)
@@ -174,10 +176,12 @@ class SensorDataService {
         'social_media_minutes': 0,
         'entertainment_minutes': 0,
         'verified_educational_minutes': 0,
+        'other_minutes': 0,
         'app_switch_count': 0,
         'educational_breakdown': <String, double>{},
         'entertainment_breakdown': <String, double>{},
         'social_media_breakdown': <String, double>{},
+        'other_breakdown': <String, double>{},
       };
     }
 
@@ -245,8 +249,18 @@ class SensorDataService {
           educationalMinutes += minutes;
           educationalBreakdown[friendlyName] =
               (educationalBreakdown[friendlyName] ?? 0) + minutes;
+        } else {
+          // Unmapped apps (ChatGPT, Chrome, PickMe, banking apps, etc.)
+          // used to vanish entirely — neither counted nor shown. They
+          // still can't be confidently sorted into study vs. distraction,
+          // so they stay OUT of duration_gap/activity_match/distraction_
+          // duration (comparator.py, classifier features unchanged) —
+          // this is purely so the student can see where the rest of
+          // their screen time actually went, not a new scoring signal.
+          otherMinutes += minutes;
+          otherBreakdown[friendlyName] =
+              (otherBreakdown[friendlyName] ?? 0) + minutes;
         }
-        // unmapped apps are ignored
       }
     } catch (e) {
       // Usage access permission likely not granted; return zeros
@@ -256,10 +270,12 @@ class SensorDataService {
       'social_media_minutes': socialMediaMinutes,
       'entertainment_minutes': entertainmentMinutes,
       'verified_educational_minutes': educationalMinutes,
+      'other_minutes': otherMinutes,
       'app_switch_count': appSwitchCount,
       'educational_breakdown': educationalBreakdown,
       'entertainment_breakdown': entertainmentBreakdown,
       'social_media_breakdown': socialMediaBreakdown,
+      'other_breakdown': otherBreakdown,
     };
   }
 
@@ -400,11 +416,18 @@ class SensorDataService {
       'verified_educational_minutes': usage['verified_educational_minutes'],
       'social_media_minutes': socialMediaMinutes,
       'entertainment_minutes': entertainmentMinutes,
+      // Display-only — apps that couldn't be confidently classified as
+      // study or distraction (ChatGPT, Chrome, PickMe, etc.). Deliberately
+      // left out of distraction_duration below, so it never reaches the
+      // classifier features and every existing score/classification stays
+      // exactly as it was before this field existed.
+      'other_minutes': usage['other_minutes'],
       'app_switch_count': usage['app_switch_count'],
       'gps_location': location,
       'distraction_duration': socialMediaMinutes + entertainmentMinutes,
       'calendar_match': calendarMatch,
       'educational_breakdown': usage['educational_breakdown'],
+      'other_breakdown': usage['other_breakdown'],
       'entertainment_breakdown': usage['entertainment_breakdown'],
       'social_media_breakdown': usage['social_media_breakdown'],
     };

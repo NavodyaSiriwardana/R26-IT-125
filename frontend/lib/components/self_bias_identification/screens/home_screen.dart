@@ -17,6 +17,7 @@ import 'package:frontend/components/self_bias_identification/screens/my_location
 import 'package:frontend/components/self_bias_identification/services/location_service.dart';
 import 'package:frontend/components/self_bias_identification/services/sensor_data_service.dart';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
+import 'package:frontend/components/temporal_causal_patterns/services/local_storage.dart';
 import 'package:frontend/main.dart' show routeObserver;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -49,17 +50,15 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   static const Color _textSecondary = Color(0xFFA5AFBE);
   static const Color _textMuted = Color(0xFF738093);
 
-  // Glass-card decoration shared by every panel on this screen.
+  // Solid card decoration shared by every panel on this screen.
+  static const Color _cardColor = Color(0xFF141428);
+
   BoxDecoration _glassDecoration({
     double radius = 20,
     Color borderColor = const Color(0x17FFFFFF),
   }) {
     return BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Colors.white.withValues(alpha: 0.06), Colors.white.withValues(alpha: 0.015)],
-      ),
+      color: _cardColor,
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(color: borderColor),
       boxShadow: [
@@ -92,12 +91,16 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   List<Map<String, dynamic>> _recentEntries = [];
   bool _isLoading = true;
   Map<String, dynamic>? _latestEntry;
+  String _userName = '';
 
   @override
   void initState() {
     super.initState();
     SensorDataService.requestPermissions();
     _loadData();
+    LocalStorage.getName().then((name) {
+      if (mounted && name.isNotEmpty) setState(() => _userName = name);
+    });
     // Sequenced (not parallel) so none of these setup dialogs ever stack
     // on top of each other on a first launch.
     _checkUsageAccessSetup()
@@ -369,8 +372,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           final aId = a['entry_id']?.toString() ?? '';
           final bId = b['entry_id']?.toString() ?? '';
 
-          final aTime = int.tryParse(aId.replaceAll('ENT_', '')) ?? 0;
-          final bTime = int.tryParse(bId.replaceAll('ENT_', '')) ?? 0;
+          final aTime = int.tryParse(aId.replaceAll(RegExp(r'\D'), '')) ?? 0;
+          final bTime = int.tryParse(bId.replaceAll(RegExp(r'\D'), '')) ?? 0;
 
           return bTime.compareTo(aTime);
         });
@@ -389,13 +392,13 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
           setState(() {
             _latestEntry = latest;
-            _latestPas = latest['pas_score'] ?? 0;
+            _latestPas = (latest['pas_score'] as num?)?.toInt() ?? 0;
             _pasLevel = latest['pas_level'] ?? '';
             _biasType = primaryBias['bias_type'] ?? '';
-            _claimedDuration = comparison['claimed_duration'] ?? 0;
-            _verifiedEdu = comparison['verified_educational'] ?? 0;
-            _appSwitches = comparison['app_switches'] ?? 0;
-            _socialMedia = comparison['social_media_minutes'] ?? 0;
+            _claimedDuration = (comparison['claimed_duration'] as num?)?.toInt() ?? 0;
+            _verifiedEdu = (comparison['verified_educational'] as num?)?.toInt() ?? 0;
+            _appSwitches = (comparison['app_switches'] as num?)?.toInt() ?? 0;
+            _socialMedia = (comparison['social_media_minutes'] as num?)?.toInt() ?? 0;
             _claimedLocation = comparison['claimed_location'] ?? '';
             _actualLocation = comparison['actual_location'] ?? '';
             _moodBefore = comparison['mood_before'] ?? '';
@@ -427,11 +430,14 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     final bool isAccurate =
         _biasType == 'accurate_perception' || _latestPas >= 70;
 
-    final Color pasColor = isAccurate
-        ? _green
-        : _latestPas >= 50
-        ? _orange
-        : _red;
+    final Color pasColor = _levelColor(
+      _pasLevel,
+      isAccurate
+          ? _green
+          : _latestPas >= 50
+              ? _orange
+              : _red,
+    );
 
     return Scaffold(
       backgroundColor: _background,
@@ -514,7 +520,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                AppState.userId,
+                                _userName.isNotEmpty ? _userName : 'there',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.outfit(
@@ -630,8 +636,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               ],
                             ),
                             child: Text(
-                              AppState.userId.isNotEmpty
-                                  ? AppState.userId[0].toUpperCase()
+                              _userName.isNotEmpty
+                                  ? _userName[0].toUpperCase()
                                   : 'U',
                               style: GoogleFonts.outfit(
                                 color: _green,
@@ -860,6 +866,62 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       // ============================================================
 
       bottomNavigationBar: _buildFloatingNav(context),
+      floatingActionButton: _newEntryFab(context),
+    );
+  }
+
+  // Stays pinned bottom-right regardless of scroll position (Scaffold's
+  // floatingActionButton, not part of the scrolling body) — a fast path
+  // to start a diary entry without going through the bottom nav's "+"
+  // (which starts facial capture for an entry already submitted).
+  Widget _newEntryFab(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(30),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(30),
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const temporal.NewEntryScreen(),
+              ),
+            ).then((_) => _loadData());
+          },
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+            decoration: BoxDecoration(
+              color: _green,
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: _green.withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.edit_note_rounded, color: Color(0xFF04231A), size: 22),
+                SizedBox(width: 8),
+                Text(
+                  'New Entry',
+                  style: TextStyle(
+                    color: Color(0xFF04231A),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1365,16 +1427,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            accent.withValues(alpha: 0.16),
-            accent.withValues(alpha: 0.03),
-          ],
-        ),
+        color: _cardColor,
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: accent.withValues(alpha: 0.22)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -1697,9 +1752,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
+        color: const Color(0xFF1A1A36),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1834,13 +1889,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_green.withValues(alpha: 0.09), Colors.white.withValues(alpha: 0.02)],
-        ),
+        color: _cardColor,
         borderRadius: BorderRadius.circular(23),
-        border: Border.all(color: _green.withValues(alpha: 0.22)),
+        border: Border.all(color: _green.withValues(alpha: 0.18)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.35),
@@ -2170,30 +2221,11 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     }
   }
 
-  /// "Today's overview" only when the latest entry is actually from
-  /// today — otherwise says which day it's really from, so the score
-  /// card never implies fresher data than it's showing.
-  String get _overviewLabel {
-    if (_latestEntry == null) return "Today's overview";
-    final entryId = _latestEntry!['entry_id']?.toString() ?? '';
-    final ts = int.tryParse(entryId.replaceAll('ENT_', ''));
-    if (ts == null) return "Today's overview";
-
-    final entryDate = DateTime.fromMillisecondsSinceEpoch(ts);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final entryDay = DateTime(entryDate.year, entryDate.month, entryDate.day);
-    final diffDays = today.difference(entryDay).inDays;
-
-    if (diffDays == 0) return "Today's overview";
-    if (diffDays == 1) return "Yesterday's overview";
-
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${months[entryDate.month - 1]} ${entryDate.day} overview';
-  }
+  /// The card always shows a single entry (whichever was submitted most
+  /// recently) rather than an aggregate of the day, so "Last entry" stays
+  /// accurate regardless of which day it's from or how many entries a
+  /// student submits in one day.
+  String get _overviewLabel => 'Last entry';
 
   String _formatBiasType(String type) {
     if (type.isEmpty || type == 'accurate_perception') {

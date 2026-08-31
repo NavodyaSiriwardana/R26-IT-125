@@ -2,7 +2,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class ApiService {
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String baseUrl = 'http://10.14.35.190:8000';
 
   static Future<Map<String, dynamic>> analyzeBias({
     required Map<String, dynamic> diaryEntry,

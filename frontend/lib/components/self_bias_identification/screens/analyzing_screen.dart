@@ -152,8 +152,8 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
           ),
           Center(
             child: Container(
-              width: 264,
-              padding: const EdgeInsets.fromLTRB(24, 30, 24, 24),
+              width: 300,
+              padding: const EdgeInsets.fromLTRB(26, 32, 26, 26),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
@@ -228,8 +228,8 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                               '${elapsed}s',
                               style: TextStyle(
                                 fontFamily: 'monospace',
-                                fontSize: 9.5,
-                                color: Colors.white.withValues(alpha: 0.4),
+                                fontSize: 11.5,
+                                color: Colors.white.withValues(alpha: 0.5),
                               ),
                             ),
                           ),
@@ -241,27 +241,27 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                   Text(
                     'Analyzing your entry',
                     style: GoogleFonts.outfit(
-                      fontSize: 16,
+                      fontSize: 19,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 5),
                   const Text(
                     'Usually takes a few seconds',
-                    style: TextStyle(fontSize: 10.5, color: Colors.white38),
+                    style: TextStyle(fontSize: 13, color: Colors.white54),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 22),
                   ...List.generate(_steps.length, (i) {
                     final done = i < _stepIndex;
                     final active = i == _stepIndex;
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.only(bottom: 14),
                       child: Row(
                         children: [
                           Container(
-                            width: 19,
-                            height: 19,
+                            width: 23,
+                            height: 23,
                             decoration: BoxDecoration(
                               color: done
                                   ? const Color(0xFF4ADE80).withValues(alpha: 0.2)
@@ -278,32 +278,32 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
                             child: done
                                 ? const Icon(
                                     Icons.check,
-                                    size: 11,
+                                    size: 13,
                                     color: Color(0xFF4ADE80),
                                   )
                                 : active
                                     ? const Padding(
-                                        padding: EdgeInsets.all(6),
+                                        padding: EdgeInsets.all(7),
                                         child: Icon(
                                           Icons.circle,
-                                          size: 6,
+                                          size: 7,
                                           color: Color(0xFF35E47B),
                                         ),
                                       )
                                     : null,
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               _steps[i],
                               style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 14,
                                 fontWeight:
                                     active ? FontWeight.w700 : FontWeight.w400,
                                 color: active
                                     ? Colors.white
                                     : Colors.white.withValues(
-                                        alpha: done ? 0.7 : 0.32,
+                                        alpha: done ? 0.75 : 0.4,
                                       ),
                               ),
                             ),

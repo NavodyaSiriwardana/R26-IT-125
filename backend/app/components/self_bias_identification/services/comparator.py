@@ -129,12 +129,18 @@ class MultiSignalComparator:
             "app_switches": app_switches,
             "social_media_minutes": social_media,
             "entertainment_minutes": sensor_data.get("entertainment_minutes", 0),
+            # Apps that couldn't be confidently sorted into study/distraction
+            # (ChatGPT, Chrome, PickMe, etc.) — display only, deliberately
+            # absent from `features` above, so it never reaches the
+            # classifier or the PAS score formula.
+            "other_minutes": sensor_data.get("other_minutes", 0),
             "mood_before": mood_before,
             "mood_after": mood_after,
             # Per-app source breakdown, for display only (see SensorData schema)
             "educational_breakdown": sensor_data.get("educational_breakdown", {}),
             "entertainment_breakdown": sensor_data.get("entertainment_breakdown", {}),
             "social_media_breakdown": sensor_data.get("social_media_breakdown", {}),
+            "other_breakdown": sensor_data.get("other_breakdown", {}),
             # Raw facial-analysis result, for display. Its stress_indicator
             # also feeds the "facial_stress" feature above and the
             # classify_with_rules rule-based cross-check.

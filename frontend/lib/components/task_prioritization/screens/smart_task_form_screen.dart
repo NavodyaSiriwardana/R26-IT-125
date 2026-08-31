@@ -1035,7 +1035,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
         await showDialog(
           context: context,
           builder: (_) => AlertDialog(
-            backgroundColor: const Color(0xFF141428),
+            backgroundColor: const Color(0xFF1B1F3D),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
@@ -1456,11 +1456,30 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF10142B),
       appBar: AppBar(
         title: const Text("Smart Task Creator"),
         backgroundColor: Colors.transparent,
       ),
-      body: SingleChildScrollView(
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(-0.8, -1.0),
+            radius: 1.4,
+            colors: [Color(0x334C8DFF), Colors.transparent],
+            stops: [0.0, 0.6],
+          ),
+        ),
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(1.1, 1.2),
+              radius: 1.3,
+              colors: [Color(0x229B87FF), Colors.transparent],
+              stops: [0.0, 0.55],
+            ),
+          ),
+          child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1471,7 +1490,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             ),
             const SizedBox(height: 12),
             Card(
-              color: const Color(0xFF141428),
+              color: const Color(0xFF1B1F3D),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -1507,7 +1526,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             ),
             const SizedBox(height: 12),
             Card(
-              color: const Color(0xFF141428),
+              color: const Color(0xFF1B1F3D),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -1541,7 +1560,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: const Color(0xFF141428),
+                color: const Color(0xFF1B1F3D),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Row(
@@ -1584,7 +1603,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
               Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF141428),
+                  color: const Color(0xFF1B1F3D),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: SwitchListTile(
@@ -1615,7 +1634,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             const SizedBox(height: 18),
 
             Card(
-              color: const Color(0xFF141428),
+              color: const Color(0xFF1B1F3D),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -1644,7 +1663,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
             const SizedBox(height: 14),
 
             Card(
-              color: const Color(0xFF141428),
+              color: const Color(0xFF1B1F3D),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -1687,7 +1706,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                   label: Text(c),
                   selected: isSelected,
                   selectedColor: Colors.cyanAccent,
-                  backgroundColor: const Color(0xFF141428),
+                  backgroundColor: const Color(0xFF1B1F3D),
                   labelStyle: TextStyle(
                     color: isSelected ? Colors.black : Colors.white70,
                     fontWeight: FontWeight.bold,
@@ -1712,7 +1731,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
               DropdownButtonFormField<int>(
                 value: estimatedDurationMinutes,
-                dropdownColor: const Color(0xFF141428),
+                dropdownColor: const Color(0xFF1B1F3D),
                 decoration: InputDecoration(
                   labelText: "How long will this task take?",
                   prefixIcon: const Icon(
@@ -1720,7 +1739,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                     color: const Color(0xFF4C8DFF),
                   ),
                   filled: true,
-                  fillColor: const Color(0xFF141428),
+                  fillColor: const Color(0xFF1B1F3D),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide.none,
@@ -1768,7 +1787,7 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF141428),
+                  color: const Color(0xFF1B1F3D),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
@@ -2187,6 +2206,8 @@ class _SmartTaskFormScreenState extends State<SmartTaskFormScreen> {
 
             const SizedBox(height: 30),
           ],
+        ),
+          ),
         ),
       ),
     );

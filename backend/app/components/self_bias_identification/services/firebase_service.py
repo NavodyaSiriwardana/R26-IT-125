@@ -60,6 +60,21 @@ class FirebaseService:
             print(f"Firebase save error: {e}", flush=True)
             return ""
 
+    @staticmethod
+    def _strip_face_image(doc: dict) -> dict:
+        """Drops the base64-encoded cropped-face image from a bias_results
+        doc before it goes into a bulk list response. Nothing on the
+        history/all-entries list screens renders it (only the live capture
+        screen does, from its own API response) — left in, every list
+        fetch balloons to hundreds of KB per entry and, over a slow link,
+        risks the request failing entirely and the list rendering empty."""
+        facial_emotion = doc.get("comparison", {}).get("facial_emotion")
+        if isinstance(facial_emotion, dict) and "cropped_face_base64" in facial_emotion:
+            facial_emotion = {**facial_emotion}
+            facial_emotion.pop("cropped_face_base64", None)
+            doc = {**doc, "comparison": {**doc["comparison"], "facial_emotion": facial_emotion}}
+        return doc
+
     def get_user_history(
         self, user_id: str, limit: int = 10
     ) -> list:
@@ -71,7 +86,7 @@ class FirebaseService:
                 .stream()
             )
             return [
-                {"id": doc.id, **doc.to_dict()}
+                self._strip_face_image({"id": doc.id, **doc.to_dict()})
                 for doc in docs
             ]
         except Exception as e:
@@ -91,7 +106,10 @@ class FirebaseService:
                 .limit(50)
                 .stream()
             )
-            results = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+            results = [
+                self._strip_face_image({"id": doc.id, **doc.to_dict()})
+                for doc in docs
+            ]
             results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
             return results[:limit]
         except Exception as e:
