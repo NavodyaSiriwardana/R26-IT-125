@@ -82,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   int _verifiedEdu = 0;
   int _appSwitches = 0;
   int _socialMedia = 0;
+  bool _isStudyCategory = true;
   String _claimedLocation = '';
   String _actualLocation = '';
   String _moodBefore = '';
@@ -399,6 +400,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
             _verifiedEdu = (comparison['verified_educational'] as num?)?.toInt() ?? 0;
             _appSwitches = (comparison['app_switches'] as num?)?.toInt() ?? 0;
             _socialMedia = (comparison['social_media_minutes'] as num?)?.toInt() ?? 0;
+            _isStudyCategory = comparison['is_study_category'] as bool? ?? true;
             _claimedLocation = comparison['claimed_location'] ?? '';
             _actualLocation = comparison['actual_location'] ?? '';
             _moodBefore = comparison['mood_before'] ?? '';
@@ -1532,6 +1534,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   // ================================================================
 
   ({String label, Color color}) _durationGapBand() {
+    if (!_isStudyCategory) return (label: 'N/A', color: _green);
     final ratio = _claimedDuration > 0 ? (_verifiedEdu / _claimedDuration) : 1.0;
     if (ratio >= 0.8) return (label: 'GOOD', color: _green);
     if (ratio >= 0.5) return (label: 'MODERATE', color: _orange);
@@ -1546,6 +1549,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   }
 
   ({String label, Color color}) _socialMediaBand() {
+    if (!_isStudyCategory) return (label: 'N/A', color: _green);
     return _verifiedEdu > _socialMedia
         ? (label: 'GOOD', color: _green)
         : (label: 'ABOVE STUDY', color: _red);
