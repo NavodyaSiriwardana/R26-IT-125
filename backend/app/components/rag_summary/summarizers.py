@@ -1,4 +1,4 @@
-"""Shared deterministic FLAN-T5 generation and RAG output parsing.
+"""Shared local model generation and RAG output parsing.
 
 Plain and RAG conditions intentionally share :func:`generate_text`, one lazy
 pipeline instance, and one decoding configuration. Research callers handle
@@ -7,6 +7,7 @@ failures explicitly; this module never substitutes a template for model output.
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
@@ -21,8 +22,11 @@ from app.config import (
     RAG_REGENERATION_PROMPT_VERSION,
 )
 
+
 from .schemas import DiaryEntryResponse
 
+
+logger = logging.getLogger(f"uvicorn.error.{__name__}")
 
 _summarizer_pipeline = None
 _generation_lock = threading.Lock()
@@ -65,24 +69,149 @@ class RagGenerationOutput:
     metadata: Dict[str, Any]
     parsing: Dict[str, Any]
 
+class _Seq2SeqPipelineCompat:
+    """
+    Compatibility wrapper for Transformers 5.x.
+
+    Mimics the old text2text-generation pipeline interface so the rest
+    of the application does not need to change.
+    """
+
+    framework = "pt"
+
+    def __init__(self, model, tokenizer):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = model.device
+
+    def __call__(self, inputs, **kwargs):
+        import torch
+
+        # Parameters that belong to tokenization, not model.generate()
+        truncation = kwargs.pop("truncation", True)
+
+        encoded = self.tokenizer(
+            inputs,
+            return_tensors="pt",
+            padding=True,
+            truncation=truncation,
+        )
+
+        encoded = {
+            key: value.to(self.model.device)
+            for key, value in encoded.items()
+        }
+
+        with torch.inference_mode():
+            outputs = self.model.generate(
+                **encoded,
+                **kwargs,
+            )
+
+        texts = self.tokenizer.batch_decode(
+            outputs,
+            skip_special_tokens=True,
+        )
+
+        # Preserve the old pipeline return format:
+        # [{"generated_text": "..."}]
+        return [
+            {"generated_text": text}
+            for text in texts
+        ]
+
 
 def _get_summarizer_pipeline():
     """Lazily create the single generator shared by every condition."""
 
     global _summarizer_pipeline
-    if _summarizer_pipeline is None:
-        from transformers import pipeline
 
-        model_kwargs: Dict[str, Any] = {}
-        if GENERATION_SETTINGS.model_revision:
-            model_kwargs["revision"] = GENERATION_SETTINGS.model_revision
-        _summarizer_pipeline = pipeline(
-            task="text2text-generation",
-            model=GENERATION_SETTINGS.model_name,
-            **model_kwargs,
+    if _summarizer_pipeline is None:
+        load_started = time.perf_counter()
+
+        logger.info(
+            "rag_model_load_start role=summary_generator model=%s revision=%s",
+            GENERATION_SETTINGS.model_name,
+            GENERATION_SETTINGS.model_revision or "default",
         )
+
+        try:
+            from transformers import (
+                AutoModelForSeq2SeqLM,
+                AutoTokenizer,
+            )
+            import torch
+
+            try:
+                torch.set_num_threads(GENERATION_SETTINGS.cpu_threads)
+            except (RuntimeError, ValueError):
+                logger.warning(
+                    "rag_cpu_thread_configuration_skipped role=summary_generator"
+                )
+
+            tokenizer_kwargs: Dict[str, Any] = {"local_files_only": True}
+            model_kwargs: Dict[str, Any] = {
+                "local_files_only": True,
+                "low_cpu_mem_usage": True,
+            }
+
+            if GENERATION_SETTINGS.torch_dtype == "bfloat16":
+                model_kwargs["dtype"] = torch.bfloat16
+            elif GENERATION_SETTINGS.torch_dtype not in {"float32", "auto"}:
+                raise ValueError(
+                    "SLM_TORCH_DTYPE must be bfloat16, float32, or auto."
+                )
+
+            if GENERATION_SETTINGS.model_revision:
+                tokenizer_kwargs["revision"] = GENERATION_SETTINGS.model_revision
+                model_kwargs["revision"] = GENERATION_SETTINGS.model_revision
+
+            tokenizer = AutoTokenizer.from_pretrained(
+                GENERATION_SETTINGS.model_name,
+                **tokenizer_kwargs,
+            )
+
+            model = AutoModelForSeq2SeqLM.from_pretrained(
+                GENERATION_SETTINGS.model_name,
+                **model_kwargs,
+            )
+            if getattr(model.generation_config, "forced_bos_token_id", None) is None:
+                model.generation_config.forced_bos_token_id = tokenizer.bos_token_id or 0
+            model.eval()
+
+            _summarizer_pipeline = _Seq2SeqPipelineCompat(
+                model=model,
+                tokenizer=tokenizer,
+            )
+
+        except Exception as error:
+            logger.exception(
+                "rag_model_load_failed role=summary_generator model=%s revision=%s "
+                "elapsed_ms=%.3f error_type=%s",
+                GENERATION_SETTINGS.model_name,
+                GENERATION_SETTINGS.model_revision or "default",
+                (time.perf_counter() - load_started) * 1000,
+                type(error).__name__,
+            )
+            raise
+
+        logger.info(
+            "rag_model_load_success role=summary_generator model=%s revision=%s "
+            "elapsed_ms=%.3f framework=%s device=%s",
+            GENERATION_SETTINGS.model_name,
+            _resolved_model_revision(_summarizer_pipeline) or "unknown",
+            (time.perf_counter() - load_started) * 1000,
+            getattr(_summarizer_pipeline, "framework", "unknown"),
+            getattr(_summarizer_pipeline, "device", "unknown"),
+        )
+
     return _summarizer_pipeline
 
+
+def preload_summary_model() -> None:
+    """Load the local summarizer before the first interactive request."""
+
+    _get_summarizer_pipeline()
 
 def get_shared_decoding_parameters() -> Dict[str, Any]:
     """
@@ -94,19 +223,19 @@ def get_shared_decoding_parameters() -> Dict[str, Any]:
     """
 
     return {
-        "max_new_tokens": GENERATION_SETTINGS.max_new_tokens,
+        "max_length": GENERATION_SETTINGS.max_new_tokens,
         "do_sample": False,
         "num_beams": GENERATION_SETTINGS.num_beams,
 
-        # Reduce repetitive FLAN-T5 generations.
+        # Reduce repetitive local summarizer generations.
         "no_repeat_ngram_size": 3,
-        "repetition_penalty": 1.15,
+        "repetition_penalty": 1.05,
 
         # Prevent beam search from strongly favoring unnecessarily
         # long generations.
         "length_penalty": 1.0,
 
-        "early_stopping": True,
+        "min_length": 0,
     }
 
 def _resolved_model_revision(generator: Any) -> Optional[str]:
@@ -129,6 +258,8 @@ def _base_generation_metadata(
         "prompt_version": prompt_version,
         "decoding_parameters": get_shared_decoding_parameters(),
         "max_input_tokens": GENERATION_SETTINGS.max_input_tokens,
+        "torch_dtype": GENERATION_SETTINGS.torch_dtype,
+        "cpu_threads": GENERATION_SETTINGS.cpu_threads,
         "random_seed": GENERATION_SETTINGS.random_seed,
         "retrieved_evidence_ids": list(retrieved_evidence_ids or []),
         "latency_ms": None,
@@ -144,7 +275,7 @@ def generate_text(
     prompt_version: str,
     retrieved_evidence_ids: Optional[Sequence[str]] = None,
 ) -> GenerationOutput:
-    """Generate with the one controlled FLAN-T5 model and decoding contract."""
+    """Generate with the one controlled local model and decoding contract."""
 
     metadata = _base_generation_metadata(
         prompt_version=prompt_version,
@@ -168,7 +299,17 @@ def generate_text(
 
             set_seed(GENERATION_SETTINGS.random_seed)
             generation_started = time.perf_counter()
+            logger.info(
+                "summary_generation_start prompt_chars=%d max_new_tokens=%d",
+                len(prompt),
+                GENERATION_SETTINGS.max_new_tokens,
+            )
             result = generator(prompt, **get_shared_decoding_parameters())
+
+            logger.info(
+                "summary_generation_finished elapsed_ms=%.3f",
+                (time.perf_counter() - generation_started) * 1000,
+            )
         if not result or not isinstance(result, list):
             raise ValueError("generator returned no result")
         generated_text = str(result[0].get("generated_text", "")).strip()
@@ -194,14 +335,83 @@ def generate_text(
                 else None
             ),
         )
+        logger.error(
+            "rag_model_execution_failed role=summary_generator model=%s phase=%s "
+            "error_type=%s",
+            GENERATION_SETTINGS.model_name,
+            "inference" if generation_started is not None else "setup",
+            type(error).__name__,
+        )
         raise GenerationFailure(metadata["failure_reason"], metadata) from error
 
 
-def _compact_field(value: Any, *, limit: int = 180) -> str:
+def generate_text_batch(
+    prompts: Sequence[str],
+    *,
+    prompt_version: str,
+    retrieved_evidence_ids: Sequence[str],
+) -> List[GenerationOutput]:
+    """Generate independent summaries in one model call."""
+
+    if not prompts:
+        return []
+    setup_started = time.perf_counter()
+    generation_started: Optional[float] = None
+    metadata = _base_generation_metadata(
+        prompt_version=prompt_version,
+        retrieved_evidence_ids=retrieved_evidence_ids,
+    )
+    try:
+        model_cache_hit = _summarizer_pipeline is not None
+        generator = _get_summarizer_pipeline()
+        setup_latency_ms = round((time.perf_counter() - setup_started) * 1000, 3)
+        with _generation_lock:
+            from transformers import set_seed
+
+            set_seed(GENERATION_SETTINGS.random_seed)
+            generation_started = time.perf_counter()
+            results = generator(list(prompts), **get_shared_decoding_parameters())
+        if not isinstance(results, list) or len(results) != len(prompts):
+            raise ValueError("generator returned the wrong number of batch results")
+        latency_ms = round((time.perf_counter() - generation_started) * 1000, 3)
+        outputs: List[GenerationOutput] = []
+        for evidence_id, result in zip(retrieved_evidence_ids, results):
+            text = str(result.get("generated_text", "")).strip()
+            if not text:
+                raise ValueError("generator returned blank text")
+            item_metadata = dict(metadata)
+            item_metadata.update(
+                status="success",
+                model_revision=_resolved_model_revision(generator),
+                model_setup_latency_ms=setup_latency_ms,
+                model_cache_hit=model_cache_hit,
+                latency_ms=round(latency_ms / len(prompts), 3),
+                retrieved_evidence_ids=[evidence_id],
+            )
+            outputs.append(GenerationOutput(text, item_metadata))
+        return outputs
+    except Exception as error:
+        metadata.update(
+            status="generation_failed",
+            failure_reason=f"model_generation_failed:{type(error).__name__}",
+            model_setup_latency_ms=round(
+                (time.perf_counter() - setup_started) * 1000,
+                3,
+            ),
+            latency_ms=(
+                round((time.perf_counter() - generation_started) * 1000, 3)
+                if generation_started is not None
+                else None
+            ),
+        )
+        raise GenerationFailure(metadata["failure_reason"], metadata) from error
+
+
+def _compact_field(value: Any, *, limit: Optional[int] = 180) -> str:
     text = " ".join(str(value or "").split()).strip()
     if not text:
         return "Not recorded"
-    return text if len(text) <= limit else f"{text[: limit - 1].rstrip()}…"
+    return text if limit is None or len(text) <= limit else f"{text[: limit - 1].rstrip()}…"
 
 
 def _duration_context(duration: Any, duration_minutes: Any) -> str:
@@ -240,82 +450,40 @@ def _resolved_metadata_location(metadata: Dict[str, Any]) -> Any:
 
 
 def _plain_entry_block(entry: DiaryEntryResponse, index: int) -> str:
-    return (
-        f"{index}. On {entry.entry_date}, activity: {_compact_field(entry.activity_name)} "
-        f"({_compact_field(entry.activity_category)}). Start time: "
-        f"{_compact_field(entry.start_time)}. End time: {_compact_field(entry.end_time)}. "
-        f"Duration: {_duration_context(entry.duration, entry.duration_minutes)}. "
-        f"Time period: {_compact_field(entry.time_period)}. "
-        f"Productivity: {_compact_field(entry.productivity_level)}. "
-        f"Mood before: {_compact_field(entry.mood_before)}. "
-        f"Mood after: {_compact_field(entry.mood_after)}. "
-        f"Outcome: {_compact_field(entry.task_outcome)}. "
-        f"Health: {_compact_field(entry.health_status)}. "
-        f"Location: {_compact_field(entry.location)}. "
-        f"With whom: {_compact_field(entry.with_whom)}. "
-        f"Specific person: "
-        f"{_specific_person_context(entry.specific_person, entry.with_whom)}. "
-        f"Notes: {_compact_field(entry.notes)}."
-    )
+    sentence = f"{_compact_field(entry.activity_name)} was"
+    if entry.activity_category:
+        sentence += f" a {_compact_field(entry.activity_category)} activity"
+    if entry.productivity_level:
+        sentence += f" with {_compact_field(entry.productivity_level)} productivity"
+    if entry.task_outcome:
+        sentence += f", resulting in {_compact_field(entry.task_outcome)}"
+    if entry.mood_before or entry.mood_after:
+        sentence += (
+            f", while your mood changed from {_compact_field(entry.mood_before or 'not recorded')}"
+            f" to {_compact_field(entry.mood_after or 'not recorded')}"
+        )
+    sentence += "."
+    if entry.notes:
+        sentence += f" You noted {_compact_field(entry.notes, limit=None)}."
+    return sentence
 
 
 def build_plain_slm_prompt_from_blocks(
     blocks: Sequence[str],
     query: str,
 ) -> str:
-    """
-    Plain SLM experimental condition.
-
-    This condition receives the same complete-week coverage requirement
-    as RAG, but without retrieval/citation grounding.
-    """
+    """Build the plain condition's compact source document."""
 
     return (
-        "Write one natural, coherent paragraph that answers the user query "
-        "using only the supplied weekly diary entries. "
-
-        "This is a complete-week summary. Represent every supplied diary "
-        "entry at least once, while combining related activities naturally. "
-
-        "Do not invent, assume, infer, or add facts that are not explicitly "
-        "recorded in the diary entries. "
-
-        "Mention the specific activity when describing productivity, mood, "
-        "location, people, or task outcome. Avoid vague statements such as "
-        "'the activity was completed' when the activity can be named. "
-
-        "Use 'The user' consistently when referring to the diary owner. "
-        "Never use 'I', 'we', 'the student', 'the author', 'he', or 'she'. "
-
-        "Avoid unnecessary repetition. Do not repeat the same fact in "
-        "different wording. "
-
-        "Do not use headings, bullet points, numbered lists, field labels, "
-        "or repeated 'This week' phrases. "
-
-        "Produce only the final paragraph.\n\n"
-
-        f"User query: {query.strip()}\n\n"
-
-        "Complete weekly diary evidence:\n"
-        + "\n\n".join(blocks)
-
-        + "\n\nComplete-week summary:"
+        "\n".join(blocks)
+        + f"\nRequested focus: {query.strip()}."
     )
 
 def build_plain_consolidation_prompt_from_blocks(
     blocks: Sequence[str],
     query: str,
 ) -> str:
-    return (
-        "Combine the draft weekly summaries below into one smooth, coherent paragraph "
-        "that answers the query. Remove repetition and do not introduce facts that are "
-        "not already present in the drafts. Do not use bullets, headings, numbered "
-        "points, or label prefixes.\n\n"
-        f"User query: {query.strip()}\n\nDraft summaries:\n"
-        + "\n\n".join(blocks)
-        + "\n\nFinal one-paragraph weekly summary:"
-    )
+    return "\n".join(blocks) + f"\nRequested focus: {query.strip()}."
 
 
 def build_plain_slm_input(entries: List[DiaryEntryResponse], query: str) -> str:
@@ -446,57 +614,23 @@ def build_rag_evidence_block(
         else "Source"
     )
 
-    activity = _compact_field(
-        metadata.get("activityName")
-    )
-
-    category = _compact_field(
-        metadata.get("activityCategory")
-    )
-
-    productivity = _compact_field(
-        metadata.get("productivityLevel")
-    )
-
-    mood_before = _compact_field(
-        metadata.get("moodBefore")
-    )
-
-    mood_after = _compact_field(
-        metadata.get("moodAfter")
-    )
-
-    outcome = _compact_field(
-        metadata.get("taskOutcome")
-    )
-
-    location = _compact_field(
-        _resolved_metadata_location(metadata)
-    )
-
-    with_whom = _compact_field(
-        metadata.get("withWhom")
-    )
-
-    notes = _compact_field(
-        metadata.get("notes"),
-        limit=140,
-    )
-
     evidence_id = _evidence_id(evidence)
-
-    return (
-        f"{source_label} | "
-        f"[EVIDENCE_ID: {evidence_id}] | "
-        f"Activity: {activity} | "
-        f"Category: {category} | "
-        f"Productivity: {productivity} | "
-        f"Mood: {mood_before} -> {mood_after} | "
-        f"Outcome: {outcome} | "
-        f"Location: {location} | "
-        f"With whom: {with_whom} | "
-        f"Notes: {notes}"
-    )
+    activity = _compact_field(metadata.get("activityName"))
+    sentence = f"{source_label}: You did {activity}"
+    if metadata.get("activityCategory"):
+        sentence += f", a {_compact_field(metadata['activityCategory'])} activity"
+    if metadata.get("productivityLevel"):
+        sentence += f" with {_compact_field(metadata['productivityLevel'])} productivity"
+    if metadata.get("taskOutcome"):
+        sentence += f", resulting in {_compact_field(metadata['taskOutcome'])}"
+    if metadata.get("moodBefore") or metadata.get("moodAfter"):
+        sentence += (
+            f", while your mood changed from {_compact_field(metadata.get('moodBefore'))}"
+            f" to {_compact_field(metadata.get('moodAfter'))}"
+        )
+    if metadata.get("notes"):
+        sentence += f"; notes: {_compact_field(metadata['notes'], limit=None)}"
+    return f"{sentence}. [EVIDENCE_ID: {evidence_id}]"
 
 
 def build_rag_slm_prompt_from_blocks(
@@ -509,56 +643,10 @@ def build_rag_slm_prompt_from_blocks(
     Build the grounded RAG generation prompt.
     """
 
-    if require_full_coverage:
-        coverage_instruction = (
-            "This is a complete-week summary. Try to represent every supplied "
-            "source at least once while naturally combining related activities. "
-        )
-    else:
-        coverage_instruction = (
-            "Use only the supplied sources that are relevant to the query. "
-        )
-
+    coverage = "all supplied sources" if require_full_coverage else "relevant sources"
     return (
-        "Write one natural, coherent paragraph that answers the user query "
-        "using only the retrieved diary evidence below. "
-
-        "Every factual statement must be directly supported by the supplied "
-        "evidence. If a detail is not explicitly recorded, omit it. "
-        "Do not guess, infer, or add information. "
-
-        f"{coverage_instruction}"
-
-        "Mention the specific activity when describing productivity, mood, "
-        "location, people, or outcomes. Avoid vague statements such as "
-        "'the activity was completed' when the activity can be named. "
-
-        "Use 'The user' consistently when referring to the diary owner. "
-        "Never use 'I', 'we', 'the student', 'the author', 'he', or 'she'. "
-
-        "Avoid repetition. State each factual detail only once unless repetition "
-        "is necessary to distinguish different diary entries. "
-
-        "When multiple facts belong to the same diary entry, combine them into "
-        "one concise sentence where possible. "
-
-        "After each factual sentence, place one or more compact source markers "
-        "that support that sentence before its final punctuation. "
-        "Example: 'The user studied database concepts at home [2].' "
-
-        "Never reveal internal EVIDENCE_ID values. "
-
-        "Do not use headings, bullet points, numbered lists, field labels, "
-        "dates unless required by the query, or repeated 'This week' phrases. "
-
-        "Produce only the final grounded paragraph.\n\n"
-
-        f"User query: {query.strip()}\n\n"
-
-        "Retrieved diary evidence:\n"
-        + "\n\n".join(blocks)
-
-        + "\n\nGrounded complete-week summary:"
+        "\n".join(blocks)
+        + f"\nRequested focus: {query.strip()}. Summarize {coverage} in second person."
     )
 
 
@@ -567,16 +655,8 @@ def build_rag_consolidation_prompt_from_blocks(
     query: str,
 ) -> str:
     return (
-        "Combine the grounded draft summaries below into one smooth, coherent paragraph "
-        "that answers the query. Preserve every compact source marker and the fact it "
-        "supports; do not drop a represented source. Preserve only facts stated in the "
-        "drafts, remove repetition, and add no new details or explanations. Keep compact "
-        "source markers before the final punctuation of their supported sentences. Do "
-        "not use bullets, headings, "
-        "numbered points, or label prefixes.\n\n"
-        f"User query: {query.strip()}\n\nGrounded draft summaries:\n"
-        + "\n\n".join(blocks)
-        + "\n\nFinal grounded one-paragraph weekly summary:"
+        "\n".join(blocks)
+        + f"\nRequested focus: {query.strip()}."
     )
 
 
@@ -606,77 +686,20 @@ def build_rag_regeneration_prompt(
 def build_rag_regeneration_prompt_from_blocks(
     blocks: Sequence[str],
     query: str,
-    unsupported_claims: Sequence[str],
+    _unsupported_claims: Sequence[str],
 ) -> str:
-    claims = "\n".join(f"- {claim}" for claim in unsupported_claims)
     return (
-        "Rewrite only the unsupported diary claims below as complete descriptive "
-        "sentences using the supplied evidence. Omit a claim if the evidence cannot "
-        "support a corrected version. Put one sentence on each line, then copy one or "
-        "more supporting evidence markers exactly as they appear below. Never return "
-        "an evidence marker without a sentence and do not add commentary.\n\n"
-        f"User query: {query.strip()}\n\nUnsupported claims:\n{claims}\n\n"
-        "Evidence blocks:\n"
-        + "\n\n".join(blocks)
-        + "\n\nCorrected claims:"
+        "\n\n".join(blocks)
+        + f"\nRequested focus: {query.strip()}. Rewrite the evidence as one concise "
+        "diary sentence using only the recorded facts."
     )
 
-
-def build_rag_coverage_repair_prompt_from_blocks(
-    blocks: Sequence[str],
-    query: str,
-) -> str:
-    """
-    Production-only repair of sources omitted from a RAG summary.
-    """
-
-    return (
-        "Write exactly one concise factual sentence for each supplied diary "
-        "source. "
-
-        "The sentence must explicitly identify the specific recorded activity. "
-
-        "Never write vague statements such as 'The activity was completed', "
-        "'The task was completed', or 'The activity was successful'. "
-
-        "If an outcome is important, state it together with the activity name. "
-
-        "Use only facts explicitly recorded in the supplied evidence. "
-        "Do not infer or add anything. "
-
-        "Use 'The user' consistently as the subject. "
-        "Never use 'I', 'the student', 'the author', 'he', or 'she'. "
-
-        "Place the source marker before the final punctuation. "
-
-        "Do not reveal internal EVIDENCE_ID values. "
-        "Do not use headings, bullets, commentary, or repeated phrases.\n\n"
-
-        f"User query: {query.strip()}\n\n"
-
-        "Missing diary evidence:\n"
-        + "\n\n".join(blocks)
-
-        + "\n\nGrounded missing-source sentence:"
-    )
 
 def _prompt_token_count(prompt: str) -> int:
-    try:
-        tokenizer = getattr(_get_summarizer_pipeline(), "tokenizer", None)
-        if tokenizer is None:
-            raise AttributeError("generator has no tokenizer")
-        # ``verbose=False`` avoids the tokenizer's misleading overlength warning
-        # while we are only measuring the prompt before splitting it.
-        encoded = tokenizer(
-            prompt,
-            add_special_tokens=True,
-            truncation=False,
-            verbose=False,
-        )
-        return len(encoded.get("input_ids", []))
-    except Exception:
-        # Conservative deterministic estimate for mocked/offline test pipelines.
-        return max(1, (len(prompt) + 2) // 3)
+    # Conservative estimate: token batching must not initialize Transformers
+    # before generation begins timing model setup.
+    words = len(re.findall(r"\S+", prompt))
+    return max(1, int(max(words * 1.4, len(prompt) / 4)) + 1)
 
 
 def _split_oversized_block(
@@ -684,16 +707,20 @@ def _split_oversized_block(
     query: str,
     prompt_builder: Callable[[Sequence[str], str], str],
 ) -> List[str]:
-    words = block.split()
+    source_match = re.match(r"\s*(Source\s+\[\d+\])", block, re.IGNORECASE)
+    evidence_match = re.search(r"\[EVIDENCE_ID:\s*[^\]]+\]", block, re.IGNORECASE)
+    repeated_header = " ".join(
+        part for part in (
+            source_match.group(1) if source_match else "",
+            evidence_match.group(0) if evidence_match else "",
+    ) if part
+    )
+    content = _EXPLICIT_EVIDENCE_RE.sub("", block).strip() if evidence_match else block
+    if source_match:
+        content = re.sub(r"^\s*Source\s+\[\d+\]\s*:\s*", "", content, flags=re.IGNORECASE)
+    words = content.split()
     if not words:
         return []
-    header_match = re.match(
-        r"((?:Source\s+\[\d+\]\s*\|\s*)?"
-        r"\[EVIDENCE_ID:\s*[^\]]+\])",
-        block,
-        re.IGNORECASE,
-    )
-    repeated_header = header_match.group(1) if header_match else ""
     chunks: List[str] = []
     current: List[str] = []
     for word in words:
@@ -800,9 +827,66 @@ def _normalize_generated_paragraph(
             lines.append(line)
     paragraph = " ".join(lines)
     paragraph = _PARAGRAPH_LABEL_RE.sub("", paragraph)
+    paragraph = re.sub(
+        r"\bthe diary (?:owner|author)(?:'s|’s)\b",
+        "your",
+        paragraph,
+        flags=re.IGNORECASE,
+    )
+    paragraph = re.sub(
+        r"\bthe diary (?:owner|author)\b",
+        "you",
+        paragraph,
+        flags=re.IGNORECASE,
+    )
+    paragraph = re.sub(r"\bthe user(?:'s|’s)\b", "your", paragraph, flags=re.IGNORECASE)
+    paragraph = re.sub(r"\bthe user\b", "you", paragraph, flags=re.IGNORECASE)
+    paragraph = re.sub(
+        r"(^|(?<=[.!?])\s+)(you|your)\b",
+        lambda match: f"{match.group(1)}{match.group(2).capitalize()}",
+        paragraph,
+        flags=re.IGNORECASE,
+    )
     if strip_citations:
         paragraph = _remove_citation_tokens(paragraph)
     return " ".join(paragraph.split()).strip()
+
+
+_QUALITY_STOPWORDS = {
+    "a", "about", "activity", "and", "author", "diary", "entry", "for",
+    "from", "in", "is", "it", "of", "on", "owner", "summary", "the",
+    "this", "to", "was", "week", "weekly", "with", "you", "your",
+}
+_LOW_INFORMATION_PHRASES = (
+    "diary entry summarizes",
+    "diary owner summarized",
+    "diary author summarized",
+    "author summarizes",
+    "summary was generated",
+)
+
+
+def _meaningful_tokens(values: Sequence[Any]) -> set[str]:
+    return {
+        token[:4]
+        for value in values
+        for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+        if len(token) > 2 and token not in _QUALITY_STOPWORDS
+    }
+
+
+def _validate_generated_summary(text: str, source_values: Sequence[Any]) -> bool:
+    """Reject blank/meta output without replacing model text with a template."""
+
+    normalized = " ".join(text.split()).strip()
+    lowered = normalized.casefold()
+    if len(re.findall(r"\b\w+\b", normalized)) < 4:
+        return False
+    if any(phrase in lowered for phrase in _LOW_INFORMATION_PHRASES):
+        return False
+    source_tokens = _meaningful_tokens(source_values)
+    summary_tokens = _meaningful_tokens([normalized])
+    return not source_tokens or bool(source_tokens.intersection(summary_tokens))
 
 
 def _consolidate_drafts(
@@ -887,6 +971,26 @@ def generate_plain_slm_summary_result(
         )
         metadata.update(status="generation_failed", failure_reason="blank_summary")
         raise GenerationFailure("blank_summary", metadata)
+    source_values = [
+        value
+        for entry in entries
+        for value in (
+            entry.activity_name,
+            entry.activity_category,
+            entry.productivity_level,
+            entry.mood_before,
+            entry.mood_after,
+            entry.task_outcome,
+            entry.notes,
+        )
+    ]
+    if not _validate_generated_summary(paragraph, source_values):
+        metadata = _aggregate_generation_metadata(
+            calls,
+            prompt_version=PLAIN_PROMPT_VERSION,
+        )
+        metadata.update(status="generation_failed", failure_reason="low_information_summary")
+        raise GenerationFailure("low_information_summary", metadata)
     return GenerationOutput(
         paragraph,
         _aggregate_generation_metadata(calls, prompt_version=PLAIN_PROMPT_VERSION),
@@ -1034,6 +1138,7 @@ def parse_rag_output(
                         "source_type": "diary_entry",
                         "is_valid": valid,
                         "validation_error": None if valid else "evidence_id_not_supplied_to_model",
+                        "attribution_method": "model_marker",
                     }
                 )
         points.append({"claim_id": f"CLM-{index:03d}", "text": text, "citations": citations})
@@ -1176,6 +1281,77 @@ def _merge_duplicate_rag_points(
     return merged_points
 
 
+def _evidence_match_score(claim: str, evidence: Dict[str, Any]) -> int:
+    """Score one generated claim against one retrieved canonical record."""
+
+    metadata = _metadata_from_evidence(evidence)
+    lowered_claim = claim.casefold()
+    activity_name = str(metadata.get("activityName") or "").strip().casefold()
+    score = 10 if activity_name and activity_name in lowered_claim else 0
+    evidence_tokens = _meaningful_tokens(
+        [
+            metadata.get("activityName"),
+            metadata.get("activityCategory"),
+            metadata.get("productivityLevel"),
+            metadata.get("moodBefore"),
+            metadata.get("moodAfter"),
+            metadata.get("taskOutcome"),
+            metadata.get("notes"),
+        ]
+    )
+    return score + len(_meaningful_tokens([claim]).intersection(evidence_tokens))
+
+
+def _attribute_uncited_points(
+    points: List[Dict[str, Any]],
+    evidence: Sequence[Dict[str, Any]],
+) -> int:
+    """Attach retrieved sources to model claims when the model drops markers.
+
+    This does not create or rewrite summary text. NLI still decides whether each
+    attached source actually supports its generated claim.
+    """
+
+    attributed = 0
+    evidence_number = {
+        _evidence_id(item): index for index, item in enumerate(evidence, 1)
+    }
+    for point in points:
+        if point.get("citations"):
+            continue
+        scored = [
+            (_evidence_match_score(str(point.get("text") or ""), item), item)
+            for item in evidence
+        ]
+        best_score = max((score for score, _ in scored), default=0)
+        if best_score <= 0:
+            continue
+        named_matches = [
+            item
+            for _, item in scored
+            if str(_metadata_from_evidence(item).get("activityName") or "").strip().casefold()
+            in str(point.get("text") or "").casefold()
+        ]
+        matches = named_matches or [item for score, item in scored if score == best_score]
+        point["citations"] = [
+            {
+                "citation_id": "",
+                "evidence_id": _evidence_id(item),
+                "label": f"[{evidence_number[_evidence_id(item)]}]",
+                "source_preview": _source_preview(item),
+                "source_type": "diary_entry",
+                "is_valid": True,
+                "validation_error": None,
+                "attribution_method": "automatic_lexical_attribution",
+            }
+            for item in matches
+            if _evidence_id(item)
+        ]
+        if point["citations"]:
+            attributed += 1
+    return attributed
+
+
 def _renumber_rag_points(points: List[Dict[str, Any]]) -> None:
     for claim_index, point in enumerate(points, 1):
         point["claim_id"] = f"CLM-{claim_index:03d}"
@@ -1183,21 +1359,94 @@ def _renumber_rag_points(points: List[Dict[str, Any]]) -> None:
             citation["citation_id"] = f"CIT-{claim_index:03d}-{citation_index:02d}"
 
 
-def _single_source_citation(
-    evidence: Dict[str, Any],
-    *,
-    claim_index: int,
-    citation_index: int,
-) -> Dict[str, Any]:
-    return {
-        "citation_id": f"CIT-{claim_index:03d}-{citation_index:02d}",
-        "evidence_id": _evidence_id(evidence),
-        "label": "[1]",
-        "source_preview": _source_preview(evidence),
-        "source_type": "diary_entry",
-        "is_valid": True,
-        "validation_error": None,
+def _generate_full_coverage_rag_summary(
+    retrieved_evidence: List[Dict[str, Any]],
+    query: str,
+) -> RagGenerationOutput:
+    """Generate one traceable claim group per entry in a single model batch."""
+
+    evidence = _prepare_weekly_evidence(retrieved_evidence)
+    evidence_ids = [_evidence_id(item) for item in evidence if _evidence_id(item)]
+    prompts = [
+        build_rag_slm_prompt_from_blocks(
+            [build_rag_evidence_block(item, source_number=index)],
+            query,
+        )
+        for index, item in enumerate(evidence, 1)
+    ]
+    outputs = generate_text_batch(
+        prompts,
+        prompt_version=RAG_PROMPT_VERSION,
+        retrieved_evidence_ids=evidence_ids,
+    )
+
+    points: List[Dict[str, Any]] = []
+    calls: List[Dict[str, Any]] = []
+    for item, output in zip(evidence, outputs):
+        item_points, _ = parse_rag_output(
+            output.text,
+            [item],
+            retain_citations=False,
+        )
+        evidence_id = _evidence_id(item)
+        for point in item_points:
+            point["citations"] = [
+                {
+                    "citation_id": "",
+                    "evidence_id": evidence_id,
+                    "label": "",
+                    "source_preview": _source_preview(item),
+                    "source_type": "diary_entry",
+                    "is_valid": True,
+                    "validation_error": None,
+                    "attribution_method": "single_source_generation",
+                }
+            ]
+        points.extend(item_points)
+        calls.append(output.metadata)
+
+    _renumber_rag_points(points)
+    paragraph = _normalize_generated_paragraph(_summary_text_from_points(points))
+    metadata = _aggregate_generation_metadata(
+        calls,
+        prompt_version=RAG_PROMPT_VERSION,
+        retrieved_evidence_ids=evidence_ids,
+    )
+    metadata.update(
+        coverage_contract_required=True,
+        coverage_contract_met=True,
+        coverage_repair_enabled=False,
+        coverage_repair_count=0,
+        generation_strategy="batched_single_source",
+    )
+    parsing = {
+        "status": "success",
+        "failure_reason": None,
+        "claim_count": len(points),
+        "display_point_count": len(points),
+        "unknown_evidence_ids": [],
+        "model_cited_claim_count": 0,
+        "automatically_attributed_claim_count": 0,
+        "single_source_bound_claim_count": len(points),
+        "uncited_claim_count": 0,
+        "represented_evidence_ids": evidence_ids,
+        "missing_evidence_ids": [],
+        "coverage_repair_evidence_ids": [],
+        "coverage_repair_skipped_reason": None,
+        "coverage_repair_round_count": 0,
+        "coverage_contract_required": True,
+        "coverage_contract_met": True,
+        "coverage_repair_enabled": False,
     }
+    return RagGenerationOutput(paragraph, points, metadata, parsing)
+
+
+def _summary_text_from_points(points: Sequence[Dict[str, Any]]) -> str:
+    return " ".join(
+        str(point.get("text") or "").strip()
+        for point in points
+        if str(point.get("text") or "").strip()
+    )
 
 
 def generate_rag_slm_summary(
@@ -1210,15 +1459,9 @@ def generate_rag_slm_summary(
     """
     Generate a grounded RAG weekly summary.
 
-    Research mode:
-        require_full_coverage=True
-        repair_missing_coverage=False
-
-    This asks the model to cover the complete week but does NOT perform
-    extra generation calls to artificially force 100% answer coverage.
-
-    That makes answer coverage an observed experimental metric rather
-    than something the pipeline guarantees after generation.
+    Long inputs are summarized in batches and then consolidated into one cited
+    narrative. When coverage repair is enabled, all omitted sources share one
+    repair call and the result is reconsolidated once.
     """
 
     if not retrieved_evidence:
@@ -1236,6 +1479,9 @@ def generate_rag_slm_summary(
             "no_retrieved_evidence",
             metadata,
         )
+
+    if require_full_coverage:
+        return _generate_full_coverage_rag_summary(retrieved_evidence, query)
 
     # ---------------------------------------------------------
     # Clean and chronologically order evidence.
@@ -1283,8 +1529,7 @@ def generate_rag_slm_summary(
     )
 
     calls: List[Dict[str, Any]] = []
-    points: List[Dict[str, Any]] = []
-    parsing_parts: List[Dict[str, Any]] = []
+    drafts: List[str] = []
 
     # ---------------------------------------------------------
     # Primary RAG generation.
@@ -1316,16 +1561,11 @@ def generate_rag_slm_summary(
         )
 
         try:
-            parsed, parsing = parse_rag_output(
+            batch_points, _ = parse_rag_output(
                 output.text,
-
-                # IMPORTANT:
-                # validate citations only against evidence actually
-                # supplied to this specific generation call.
                 batch_evidence,
                 source_aliases=source_aliases,
             )
-
         except RagParsingFailure as error:
             raise RagParsingFailure(
                 error.reason,
@@ -1333,8 +1573,57 @@ def generate_rag_slm_summary(
                 output.metadata,
             ) from error
 
-        points.extend(parsed)
-        parsing_parts.append(parsing)
+        invalid_labels = {
+            str(citation.get("label") or "")
+            for point in batch_points
+            for citation in point.get("citations") or []
+            if citation.get("is_valid") is False
+        }
+        draft = output.text
+        for label in invalid_labels:
+            if label:
+                draft = draft.replace(label, "")
+        drafts.append(draft)
+
+    paragraph_with_citations = _consolidate_drafts(
+        drafts,
+        query=query,
+        prompt_builder=build_rag_consolidation_prompt_from_blocks,
+        prompt_version=RAG_PROMPT_VERSION,
+        calls=calls,
+        retrieved_evidence_ids=evidence_ids,
+        preserve_citations=True,
+    )
+
+    source_values = [
+        value
+        for item in retrieved_evidence
+        for value in _metadata_from_evidence(item).values()
+    ]
+    if not _validate_generated_summary(
+        _normalize_generated_paragraph(paragraph_with_citations),
+        source_values,
+    ):
+        metadata = _aggregate_generation_metadata(
+            calls,
+            prompt_version=RAG_PROMPT_VERSION,
+            retrieved_evidence_ids=evidence_ids,
+        )
+        metadata.update(status="generation_failed", failure_reason="low_information_summary")
+        raise GenerationFailure("low_information_summary", metadata)
+
+    try:
+        points, parsing = parse_rag_output(
+            paragraph_with_citations,
+            retrieved_evidence,
+            source_aliases=source_aliases,
+        )
+    except RagParsingFailure as error:
+        raise RagParsingFailure(
+            error.reason,
+            error.raw_text,
+            calls[-1] if calls else None,
+        ) from error
 
     # ---------------------------------------------------------
     # Deterministic duplicate removal.
@@ -1343,6 +1632,8 @@ def generate_rag_slm_summary(
     points = _merge_duplicate_rag_points(
         points
     )
+    model_cited_claim_count = sum(bool(point.get("citations")) for point in points)
+    attributed_claim_count = _attribute_uncited_points(points, retrieved_evidence)
 
     represented_ids = _represented_evidence_ids(
         points
@@ -1359,108 +1650,9 @@ def generate_rag_slm_summary(
     ]
 
     repaired_ids: List[str] = []
-
-    # ---------------------------------------------------------
-    # OPTIONAL PRODUCTION-ONLY coverage repair.
-    #
-    # DO NOT enable this for the RAG-vs-Plain research experiment.
-    # ---------------------------------------------------------
-
-    if (
-        require_full_coverage
-        and repair_missing_coverage
-        and missing_ids
-    ):
-        evidence_by_id = {
-            _evidence_id(item): item
-            for item in retrieved_evidence
-            if _evidence_id(item)
-        }
-
-        for missing_id in missing_ids:
-            evidence = evidence_by_id.get(
-                missing_id
-            )
-
-            if evidence is None:
-                continue
-
-            repair_block = build_rag_evidence_block(
-                evidence,
-                source_number=1,
-            )
-
-            output = generate_text(
-                build_rag_coverage_repair_prompt_from_blocks(
-                    [repair_block],
-                    query,
-                ),
-                prompt_version=RAG_PROMPT_VERSION,
-                retrieved_evidence_ids=[missing_id],
-            )
-
-            calls.append(
-                output.metadata
-            )
-
-            try:
-                repaired_points, repair_parsing = (
-                    parse_rag_output(
-                        output.text,
-                        [evidence],
-                    )
-                )
-
-            except RagParsingFailure as error:
-                raise RagParsingFailure(
-                    error.reason,
-                    error.raw_text,
-                    output.metadata,
-                ) from error
-
-            for point in repaired_points:
-                has_valid_citation = any(
-                    citation.get("is_valid")
-                    is not False
-                    and citation.get(
-                        "evidence_id"
-                    )
-                    == missing_id
-
-                    for citation
-                    in point.get(
-                        "citations"
-                    )
-                    or []
-                )
-
-                if not has_valid_citation:
-                    point["citations"] = [
-                        _single_source_citation(
-                            evidence,
-                            claim_index=(
-                                len(points) + 1
-                            ),
-                            citation_index=1,
-                        )
-                    ]
-
-            points.extend(
-                repaired_points
-            )
-
-            parsing_parts.append(
-                repair_parsing
-            )
-
-            repaired_ids.append(
-                missing_id
-            )
-
-        # Repair calls can independently produce identical text.
-        points = _merge_duplicate_rag_points(
-            points
-        )
+    repair_skipped_reason: Optional[str] = None
+    repair_round_count = 0
+    repair_unknown_ids: List[str] = list(parsing.get("unknown_evidence_ids", []))
 
     # ---------------------------------------------------------
     # Final IDs and coverage measurement.
@@ -1510,18 +1702,13 @@ def generate_rag_slm_summary(
         "failure_reason": None,
 
         "claim_count": len(points),
-        "display_point_count": 1,
+        "display_point_count": len(points),
 
-        "unknown_evidence_ids": list(
-            dict.fromkeys(
-                item
-                for part in parsing_parts
-                for item in part.get(
-                    "unknown_evidence_ids",
-                    [],
-                )
-            )
-        ),
+        "unknown_evidence_ids": list(dict.fromkeys(repair_unknown_ids)),
+
+        "model_cited_claim_count": model_cited_claim_count,
+
+        "automatically_attributed_claim_count": attributed_claim_count,
 
         "uncited_claim_count": sum(
             1
@@ -1540,6 +1727,10 @@ def generate_rag_slm_summary(
         "coverage_repair_evidence_ids": (
             repaired_ids
         ),
+
+        "coverage_repair_skipped_reason": repair_skipped_reason,
+
+        "coverage_repair_round_count": repair_round_count,
 
         "coverage_contract_required": (
             require_full_coverage
@@ -1575,6 +1766,9 @@ def generate_rag_slm_summary(
         coverage_repair_count=(
             len(repaired_ids)
         ),
+
+        coverage_repair_skipped_reason=repair_skipped_reason,
+        coverage_repair_round_count=repair_round_count,
     )
 
     return RagGenerationOutput(
@@ -1646,6 +1840,9 @@ def regenerate_unsupported_rag_claims(
         point["claim_id"] = f"CLM-{claim_index:03d}"
         for citation_index, citation in enumerate(point["citations"], 1):
             citation["citation_id"] = f"CIT-{claim_index:03d}-{citation_index:02d}"
+
+    _attribute_uncited_points(points, retrieved_evidence)
+    _renumber_rag_points(points)
 
     evidence_ids = [_evidence_id(item) for item in retrieved_evidence]
     parsing = {

@@ -1,11 +1,16 @@
+import logging
 from pathlib import Path
+import time
 from typing import Iterable, List, Optional, Sequence
 
 import chromadb
 
 from .date_utils import get_week_bounds, validate_week_range
+
 from .schemas import DiaryEntryResponse
 
+
+logger = logging.getLogger(f"uvicorn.error.{__name__}")
 
 CHROMA_DIR = Path("app/data/chroma_db")
 COLLECTION_NAME = "rag_diary_entries"
@@ -16,9 +21,44 @@ _embedding_model = None
 
 def _create_embedding_model():
     # Keep the heavyweight transformers import out of application startup.
-    from sentence_transformers import SentenceTransformer
+    load_started = time.perf_counter()
+    logger.info(
+        "rag_model_load_start role=embedding model=%s",
+        EMBEDDING_MODEL_NAME,
+    )
+    try:
+        from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(EMBEDDING_MODEL_NAME)
+        try:
+            model = SentenceTransformer(
+                EMBEDDING_MODEL_NAME,
+                local_files_only=True,
+            )
+        except OSError:
+            standard_cache = Path.home() / ".cache" / "huggingface" / "hub"
+            if not standard_cache.exists():
+                raise
+            model = SentenceTransformer(
+                EMBEDDING_MODEL_NAME,
+                cache_folder=str(standard_cache),
+                local_files_only=True,
+            )
+    except Exception as error:
+        logger.exception(
+            "rag_model_load_failed role=embedding model=%s elapsed_ms=%.3f "
+            "error_type=%s",
+            EMBEDDING_MODEL_NAME,
+            (time.perf_counter() - load_started) * 1000,
+            type(error).__name__,
+        )
+        raise
+    logger.info(
+        "rag_model_load_success role=embedding model=%s elapsed_ms=%.3f device=%s",
+        EMBEDDING_MODEL_NAME,
+        (time.perf_counter() - load_started) * 1000,
+        getattr(model, "device", "unknown"),
+    )
+    return model
 
 
 def _get_embedding_model():
@@ -30,6 +70,12 @@ def _get_embedding_model():
         _embedding_model = _create_embedding_model()
 
     return _embedding_model
+
+
+def preload_embedding_model() -> None:
+    """Load the local semantic retriever before focused summary requests."""
+
+    _get_embedding_model()
 
 
 def _get_chroma_client():
@@ -208,6 +254,24 @@ def index_diary_entry(entry: DiaryEntryResponse) -> None:
     )
 
 
+def index_diary_entries(entries: Sequence[DiaryEntryResponse]) -> None:
+    """Synchronize a week in one embedding batch and one Chroma upsert."""
+
+    if not entries:
+        return
+    documents = [build_entry_document(entry) for entry in entries]
+    embeddings = _get_embedding_model().encode(
+        documents,
+        normalize_embeddings=True,
+    ).tolist()
+    _get_collection().upsert(
+        ids=[_get_chroma_document_id(entry) for entry in entries],
+        documents=documents,
+        embeddings=embeddings,
+        metadatas=[_build_entry_metadata(entry) for entry in entries],
+    )
+
+
 def search_diary_entries(
     user_id: str,
     query: str,
@@ -344,8 +408,7 @@ def retrieve_weekly_evidence(
 
     # Firestore remains canonical, but synchronizing the requested week here
     # ensures older records are actually available to Chroma before querying.
-    for entry in entries:
-        index_diary_entry(entry)
+    index_diary_entries(entries)
 
     ranked_evidence = search_diary_entries_for_week(
         user_id=user_id,
@@ -393,7 +456,7 @@ def rank_week_entries_in_memory(
     week_end: str,
     top_k: int = 8,
 ) -> List[dict]:
-    """Rank an already scoped research dataset without relying on Chroma state."""
+    """Semantically rank an already-scoped canonical week in one embedding call."""
 
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero.")
@@ -413,13 +476,18 @@ def rank_week_entries_in_memory(
         normalize_embeddings=True,
     )
     query_embedding = embeddings[0]
-    scored = []
-    for item, document_embedding in zip(evidence, embeddings[1:]):
-        similarity = float(sum(
-            float(left) * float(right)
-            for left, right in zip(query_embedding, document_embedding)
-        ))
-        scored.append((similarity, item))
+    scored = [
+        (
+            float(
+                sum(
+                    float(left) * float(right)
+                    for left, right in zip(query_embedding, document_embedding)
+                )
+            ),
+            item,
+        )
+        for item, document_embedding in zip(evidence, embeddings[1:])
+    ]
 
     scored.sort(
         key=lambda pair: (

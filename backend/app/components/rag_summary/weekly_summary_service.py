@@ -1,11 +1,4 @@
-"""Plain-text versus query-aware same-week RAG summarization orchestration.
-
-Plain receives the complete requested week serialized as ordinary text. RAG
-receives either the complete canonical week for holistic requests or a focused
-same-week Chroma result for specific questions, then uses a stricter grounding
-prompt. NLI scores both final paragraphs after generation; those scores are
-diagnostics only and never reject, rewrite, or hide model output.
-"""
+"""Plain-text versus query-aware same-week RAG summarization orchestration."""
 
 from __future__ import annotations
 
@@ -38,6 +31,7 @@ from .summarizers import (
     RagParsingFailure,
     generate_plain_slm_summary_result,
     generate_rag_slm_summary,
+    regenerate_unsupported_rag_claims,
 )
 
 
@@ -177,6 +171,13 @@ def _summary_points_to_text(points: Sequence[Dict[str, Any]]) -> str:
     ).strip()
 
 
+def _renumber_summary_points(points: Sequence[Dict[str, Any]]) -> None:
+    for claim_index, point in enumerate(points, 1):
+        point["claim_id"] = f"CLM-{claim_index:03d}"
+        for citation_index, citation in enumerate(point.get("citations") or [], 1):
+            citation["citation_id"] = f"CIT-{claim_index:03d}-{citation_index:02d}"
+
+
 def _evidence_ids(evidence: Sequence[Dict[str, Any]]) -> List[str]:
     return list(
         dict.fromkeys(
@@ -188,7 +189,7 @@ def _evidence_ids(evidence: Sequence[Dict[str, Any]]) -> List[str]:
 
 
 def _entailed_evidence_ids(evaluation: Dict[str, Any]) -> Optional[List[str]]:
-    """Return sources represented by claims the NLI evaluator supported."""
+    """Return sources represented by supported claims."""
 
     if evaluation.get("status") != "available":
         return None
@@ -405,8 +406,8 @@ def run_plain_condition(
             "summary_text": "",
             "generation": error.metadata,
             "generation_latency_ms": error.metadata.get("latency_ms"),
-            "evaluation": _unavailable_evaluation("Plain SLM generation failed."),
-            "metrics": _not_applicable_reference_metrics("Plain SLM generation failed."),
+            "evaluation": _unavailable_evaluation("Plain generation failed."),
+            "metrics": _not_applicable_reference_metrics("Plain generation failed."),
             "source_entry_count": len(entries),
             "latency_ms": round((time.perf_counter() - started) * 1000, 3),
         }
@@ -419,10 +420,20 @@ def run_plain_condition(
         week_end=week_end,
         nli_runner=nli_runner,
     )
+    grounded_rate = evaluation.get("grounded_claim_rate")
+    if evaluation.get("status") != "available":
+        condition_status = "evaluation_unavailable"
+        failure_reason = "nli_evaluation_unavailable"
+    elif grounded_rate == 0:
+        condition_status = "unsupported_output"
+        failure_reason = "no_generated_claim_was_supported"
+    else:
+        condition_status = "success"
+        failure_reason = None
     return {
         "condition": "plain_slm",
-        "status": "success",
-        "failure_reason": None,
+        "status": condition_status,
+        "failure_reason": failure_reason,
         "summary_text": generated.text,
         "generation": generated.metadata,
         "generation_latency_ms": generated.metadata.get("latency_ms"),
@@ -490,8 +501,8 @@ def run_rag_condition(
             "generation": error.metadata,
             "generation_latency_ms": error.metadata.get("latency_ms"),
             "parsing": {"status": "not_run", "failure_reason": "generation_failed"},
-            "evaluation": _unavailable_evaluation("RAG SLM generation failed."),
-            "metrics": _not_applicable_reference_metrics("RAG SLM generation failed."),
+            "evaluation": _unavailable_evaluation("RAG generation failed."),
+            "metrics": _not_applicable_reference_metrics("RAG generation failed."),
             "retrieval": dict(retrieval),
             "latency_ms": round((time.perf_counter() - started) * 1000, 3),
         }
@@ -513,25 +524,101 @@ def run_rag_condition(
             "latency_ms": round((time.perf_counter() - started) * 1000, 3),
         }
 
-    summary_text = _summary_points_to_text(generated.summary_points)
     retrieved_id_list = _evidence_ids(retrieved_evidence)
     retrieved_ids = set(retrieved_id_list)
     weekly_ids = list(dict.fromkeys(entry.evidence_id for entry in entries))
     weekly_id_set = set(weekly_ids)
-    cited_ids = [
-        evidence_id
-        for evidence_id in generated.parsing.get("represented_evidence_ids", [])
-        if evidence_id in retrieved_ids and evidence_id in weekly_id_set
-    ]
-    cited_ids = list(dict.fromkeys(cited_ids))
+    summary_points = list(generated.summary_points)
+    raw_outputs = [generated.raw_text]
+    generation = dict(generated.metadata)
+    parsing = dict(generated.parsing)
+
     evaluation = evaluate_rag_summary_groundedness(
-        generated.summary_points,
+        summary_points,
         entries,
         user_id=user_id,
         week_start=week_start,
         week_end=week_end,
         nli_runner=nli_runner,
         allowed_evidence_ids=retrieved_id_list,
+    )
+
+    # Repair only contradicted/unsupported points against their own cited
+    # evidence. This avoids cross-entry fact mixing while keeping the output
+    # model-generated.
+    repair_calls: List[Dict[str, Any]] = []
+    if evaluation.get("status") == "available":
+        claims_by_id: Dict[str, List[Dict[str, Any]]] = {}
+        for claim in evaluation.get("per_claim", []):
+            claim_id = str(claim.get("claim_id") or "").strip()
+            if claim_id and claim.get("classification") != "entailed":
+                claims_by_id.setdefault(claim_id, []).append(claim)
+
+        evidence_by_id = {
+            str(item.get("evidence_id") or "").strip(): item
+            for item in retrieved_evidence
+        }
+        repaired_by_claim_id: Dict[str, List[Dict[str, Any]]] = {}
+        for claim_id, claims in claims_by_id.items():
+            evidence_ids = list(
+                dict.fromkeys(
+                    str(evidence_id).strip()
+                    for claim in claims
+                    for evidence_id in claim.get("valid_evidence_ids", [])
+                    if str(evidence_id).strip() in evidence_by_id
+                )
+            )
+            repair_evidence = [evidence_by_id[evidence_id] for evidence_id in evidence_ids]
+            if not repair_evidence:
+                continue
+            try:
+                repaired = regenerate_unsupported_rag_claims(
+                    repair_evidence,
+                    query,
+                    [str(claim.get("claim") or "") for claim in claims],
+                )
+            except (GenerationFailure, RagParsingFailure):
+                continue
+            repaired_by_claim_id[claim_id] = repaired.summary_points
+            raw_outputs.append(repaired.raw_text)
+            repair_calls.append(repaired.metadata)
+
+        if repaired_by_claim_id:
+            repaired_points: List[Dict[str, Any]] = []
+            for point in summary_points:
+                claim_id = str(point.get("claim_id") or "").strip()
+                repaired_points.extend(repaired_by_claim_id.get(claim_id, [point]))
+            summary_points = repaired_points
+            _renumber_summary_points(summary_points)
+            evaluation = evaluate_rag_summary_groundedness(
+                summary_points,
+                entries,
+                user_id=user_id,
+                week_start=week_start,
+                week_end=week_end,
+                nli_runner=nli_runner,
+                allowed_evidence_ids=retrieved_id_list,
+            )
+
+    repair_latency_ms = sum(
+        float(call.get("latency_ms") or 0) for call in repair_calls
+    )
+    generation["latency_ms"] = round(
+        float(generation.get("latency_ms") or 0) + repair_latency_ms,
+        3,
+    )
+    generation["unsupported_repair_count"] = len(repair_calls)
+    generation["unsupported_repair_calls"] = repair_calls
+    summary_text = _summary_points_to_text(summary_points)
+    cited_ids = list(
+        dict.fromkeys(
+            str(citation.get("evidence_id") or "").strip()
+            for point in summary_points
+            for citation in point.get("citations") or []
+            if citation.get("is_valid") is not False
+            and str(citation.get("evidence_id") or "").strip() in retrieved_ids
+            and str(citation.get("evidence_id") or "").strip() in weekly_id_set
+        )
     )
     evaluated_represented_ids = _entailed_evidence_ids(evaluation)
     represented_ids = (
@@ -577,16 +664,38 @@ def run_rag_condition(
             else None
         ),
     )
+    parsing.update(
+        claim_count=len(summary_points),
+        display_point_count=len(summary_points),
+        represented_evidence_ids=cited_ids,
+        missing_evidence_ids=[
+            evidence_id for evidence_id in retrieved_id_list if evidence_id not in cited_ids
+        ],
+        unsupported_repair_count=len(repair_calls),
+    )
+    grounded_rate = evaluation.get("grounded_claim_rate")
+    if evaluation.get("status") != "available":
+        condition_status = "evaluation_unavailable"
+        failure_reason = "nli_evaluation_unavailable"
+    elif grounded_rate != 1.0:
+        condition_status = "unsupported_output"
+        failure_reason = "one_or_more_generated_claims_were_unsupported"
+    elif full_week_coverage_required and answer_coverage != 1.0:
+        condition_status = "incomplete_coverage"
+        failure_reason = "not_all_weekly_entries_were_supported"
+    else:
+        condition_status = "success"
+        failure_reason = None
     return {
         "condition": "rag_slm",
-        "status": "success",
-        "failure_reason": None,
-        "raw_output": generated.raw_text,
+        "status": condition_status,
+        "failure_reason": failure_reason,
+        "raw_output": "\n".join(raw_outputs),
         "summary_text": summary_text,
-        "summary_points": generated.summary_points,
-        "generation": generated.metadata,
-        "generation_latency_ms": generated.metadata.get("latency_ms"),
-        "parsing": generated.parsing,
+        "summary_points": summary_points,
+        "generation": generation,
+        "generation_latency_ms": generation.get("latency_ms"),
+        "parsing": parsing,
         "evaluation": evaluation,
         "metrics": _reference_metrics(summary_text, reference_summary),
         "retrieval": dict(retrieval),
@@ -733,9 +842,9 @@ def run_summarization_experiment(
             "same_query": True,
             "same_current_week_source_pool": True,
             "differences": {
-                "plain": "complete week serialized as ordinary text with a standard summary prompt",
+                "plain": "complete week serialized as ordinary text without citations",
                 "rag": (
-                    "query-aware same-week evidence with a strict grounding prompt; "
+                    "query-aware same-week evidence with source attribution; "
                     f"resolved strategy: {retrieval.get('retrieval_strategy')}"
                 ),
             },
@@ -902,9 +1011,9 @@ def _empty_experiment(
             "same_query": True,
             "same_current_week_source_pool": True,
             "differences": {
-                "plain": "complete week serialized as ordinary text with a standard summary prompt",
+                "plain": "complete week serialized as ordinary text without citations",
                 "rag": (
-                    "query-aware same-week evidence with a strict grounding prompt; "
+                    "query-aware same-week evidence with source attribution; "
                     f"resolved strategy: {retrieval_strategy}"
                 ),
             },
@@ -913,11 +1022,40 @@ def _empty_experiment(
     }
 
 
-def _plain_display_fallback(plain: Dict[str, Any]) -> List[Dict[str, Any]]:
-    text = str(plain.get("summary_text") or "").strip()
-    if plain.get("status") != "success" or not text:
+def _supported_rag_display_points(rag: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return only RAG points whose generated claims are supported."""
+
+    points = list(rag.get("summary_points") or [])
+    claims = rag.get("evaluation", {}).get("per_claim")
+    if not isinstance(claims, list):
         return []
-    return [{"claim_id": "PLAIN-FALLBACK-001", "text": text, "citations": []}]
+
+    claims_by_id: Dict[str, List[Dict[str, Any]]] = {}
+    for claim in claims:
+        if not isinstance(claim, dict):
+            continue
+        claim_id = str(claim.get("claim_id") or "").strip()
+        if claim_id:
+            claims_by_id.setdefault(claim_id, []).append(claim)
+
+    supported: List[Dict[str, Any]] = []
+    for index, point in enumerate(points):
+        claim_id = str(point.get("claim_id") or "").strip()
+        matching = claims_by_id.get(claim_id)
+        if matching is not None:
+            is_entailed = bool(matching) and all(
+                claim.get("classification") == "entailed"
+                for claim in matching
+            )
+        else:
+            is_entailed = (
+                len(claims) == len(points)
+                and isinstance(claims[index], dict)
+                and claims[index].get("classification") == "entailed"
+            )
+        if is_entailed:
+            supported.append(point)
+    return supported
 
 
 def generate_weekly_summary(request: WeeklySummaryRequest) -> WeeklySummaryResponse:
@@ -944,12 +1082,11 @@ def generate_weekly_summary(request: WeeklySummaryRequest) -> WeeklySummaryRespo
             reference_summary=request_data.get("reference_summary"),
         )
         rag = experiment["rag"]
-        summary_points = list(rag.get("summary_points") or [])
+        summary_points = _supported_rag_display_points(rag)
+        rag["display_summary_points"] = summary_points
         displayed_condition = "rag"
-        if not summary_points:
-            # Preserve a useful UI when retrieval fails, while keeping the failed
-            summary_points = _plain_display_fallback(experiment["plain_slm"])
-            displayed_condition = "plain_slm_fallback" if summary_points else "none"
+
+        displayed_evaluation = rag.get("evaluation", {})
 
         current_evidence = _current_week_context(
             entries,
@@ -972,6 +1109,7 @@ def generate_weekly_summary(request: WeeklySummaryRequest) -> WeeklySummaryRespo
         )
         summary_points = []
         displayed_condition = "none"
+        displayed_evaluation = {}
         feedback = _empty_feedback()
 
     summary_id = str(uuid4())
@@ -986,13 +1124,13 @@ def generate_weekly_summary(request: WeeklySummaryRequest) -> WeeklySummaryRespo
         week_end=resolved_end,
         saved_summary_id=summary_id,
         query=request_data["query"],
-        summary_type="weekly_plain_text_vs_chroma_rag",
+        summary_type="weekly_plain_vs_traceable_rag",
         summary_points=summary_points,
-        hallucination_score=None,
-        unsupported_claim_rate=None,
-        grounded_claim_rate=None,
-        citation_precision=None,
-        citation_completeness=None,
+        hallucination_score=displayed_evaluation.get("hallucination_score"),
+        unsupported_claim_rate=displayed_evaluation.get("unsupported_claim_rate"),
+        grounded_claim_rate=displayed_evaluation.get("grounded_claim_rate"),
+        citation_precision=displayed_evaluation.get("citation_precision"),
+        citation_completeness=displayed_evaluation.get("citation_completeness"),
         feedback=feedback,
         additional_data=additional_data,
     )

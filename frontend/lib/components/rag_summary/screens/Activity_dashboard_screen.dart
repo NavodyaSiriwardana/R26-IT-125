@@ -9,6 +9,7 @@ import 'Diary_home_screen.dart';
 import 'Summary_result_screen.dart';
 import '../services/Rag_summary_service.dart';
 import '../widgets/diary_entry_detail_dialog.dart';
+import '../widgets/weekly_summary_progress.dart';
 import '../../../core/network/dio_client.dart';
 import '../../temporal_causal_patterns/screens/new_entry_screen.dart';
 
@@ -74,9 +75,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
   Future<void> _addEntry() async {
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(
-        builder: (_) => const NewEntryScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const NewEntryScreen()),
     );
 
     if (!mounted) return;
@@ -104,6 +103,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
 
     _showProgressDialog(
       'Creating your weekly reflection…',
+      showSummaryProgress: true,
     );
 
     try {
@@ -113,13 +113,9 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
 
       if (!mounted) return;
 
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pop();
+      Navigator.of(context, rootNavigator: true).pop();
 
-      final dashboardRefresh =
-          _dashboardKey.currentState?.refreshDashboard();
+      final dashboardRefresh = _dashboardKey.currentState?.refreshDashboard();
 
       await _openSummary(summary);
 
@@ -127,14 +123,9 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
     } catch (e) {
       if (!mounted) return;
 
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pop();
+      Navigator.of(context, rootNavigator: true).pop();
 
-      _showMessage(
-        'Your weekly reflection could not be created. Try again.',
-      );
+      _showMessage('Your weekly reflection could not be created. Try again.');
     } finally {
       _summaryRequestInFlight = false;
     }
@@ -152,9 +143,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
 
     _summaryRequestInFlight = true;
 
-    _showProgressDialog(
-      'Loading the latest saved summary…',
-    );
+    _showProgressDialog('Loading the latest saved summary…');
 
     try {
       final summary = await _summaryService.getLatestWeeklySummary(
@@ -163,31 +152,21 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
 
       if (!mounted) return;
 
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pop();
+      Navigator.of(context, rootNavigator: true).pop();
 
       await _openSummary(summary);
     } catch (e) {
       if (!mounted) return;
 
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pop();
+      Navigator.of(context, rootNavigator: true).pop();
 
-      _showMessage(
-        'The latest saved summary could not be loaded.',
-      );
+      _showMessage('The latest saved summary could not be loaded.');
     } finally {
       _summaryRequestInFlight = false;
     }
   }
 
-  Future<void> _openSummary(
-    CompareSummaryResponse summary,
-  ) async {
+  Future<void> _openSummary(CompareSummaryResponse summary) async {
     final userId = _userId;
 
     if (userId == null) {
@@ -208,9 +187,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
     );
   }
 
-  Future<void> _loadEvidence(
-    String evidenceId,
-  ) async {
+  Future<void> _loadEvidence(String evidenceId) async {
     final userId = _userId;
 
     if (userId == null) {
@@ -218,9 +195,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
       return;
     }
 
-    _showProgressDialog(
-      'Opening diary entry…',
-    );
+    _showProgressDialog('Opening diary entry…');
 
     try {
       final entry = await _summaryService.getEvidenceById(
@@ -230,36 +205,26 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
 
       if (!mounted) return;
 
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pop();
+      Navigator.of(context, rootNavigator: true).pop();
 
       _showEntry(entry);
     } catch (e) {
       if (!mounted) return;
 
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pop();
+      Navigator.of(context, rootNavigator: true).pop();
 
-      _showMessage(
-        'The selected diary entry could not be opened.',
-      );
+      _showMessage('The selected diary entry could not be opened.');
     }
   }
 
   void _showEntry(DiaryEntry entry) {
     showDialog<void>(
       context: context,
-      builder: (_) => DiaryEntryDetailDialog(
-        entry: entry,
-      ),
+      builder: (_) => DiaryEntryDetailDialog(entry: entry),
     );
   }
 
-  void _showProgressDialog(String message) {
+  void _showProgressDialog(String message, {bool showSummaryProgress = false}) {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -270,24 +235,29 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          content: Row(
-            children: [
-              const CircularProgressIndicator(
-                color: DashboardColors.primary,
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(
-                    color: DashboardColors.text,
-                    height: 1.4,
-                    fontWeight: FontWeight.w700,
-                  ),
+          content: showSummaryProgress
+              ? WeeklySummaryProgress(
+                  initialMessage: message,
+                  color: DashboardColors.primary,
+                )
+              : Row(
+                  children: [
+                    const CircularProgressIndicator(
+                      color: DashboardColors.primary,
+                    ),
+                    const SizedBox(width: 18),
+                    Expanded(
+                      child: Text(
+                        message,
+                        style: const TextStyle(
+                          color: DashboardColors.text,
+                          height: 1.4,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -309,9 +279,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
       return const Scaffold(
         backgroundColor: DashboardColors.background,
         body: Center(
-          child: CircularProgressIndicator(
-            color: DashboardColors.primary,
-          ),
+          child: CircularProgressIndicator(color: DashboardColors.primary),
         ),
       );
     }
@@ -350,10 +318,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
             onEntryTap: _showEntry,
             onEvidenceTap: _loadEvidence,
           ),
-          DiaryHomeScreen(
-            key: ValueKey(_diaryRevision),
-            userId: userId,
-          ),
+          DiaryHomeScreen(key: ValueKey(_diaryRevision), userId: userId),
         ],
       ),
       floatingActionButton: _selectedIndex == 0
@@ -373,10 +338,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
         indicatorColor: DashboardColors.primaryDark,
         destinations: const [
           NavigationDestination(
-            icon: Icon(
-              Icons.dashboard_outlined,
-              color: DashboardColors.muted,
-            ),
+            icon: Icon(Icons.dashboard_outlined, color: DashboardColors.muted),
             selectedIcon: Icon(
               Icons.dashboard_rounded,
               color: DashboardColors.text,
@@ -384,10 +346,7 @@ class _ActivityDashboardState extends State<ActivityDashboard> {
             label: 'Dashboard',
           ),
           NavigationDestination(
-            icon: Icon(
-              Icons.menu_book_outlined,
-              color: DashboardColors.muted,
-            ),
+            icon: Icon(Icons.menu_book_outlined, color: DashboardColors.muted),
             selectedIcon: Icon(
               Icons.menu_book_rounded,
               color: DashboardColors.text,

@@ -49,15 +49,19 @@ def _float_env(name: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class GenerationSettings:
-    model_name: str = os.getenv("SLM_MODEL_NAME", "google/flan-t5-large")
+    model_name: str = os.getenv("SLM_MODEL_NAME", "sshleifer/distilbart-cnn-6-6")
     model_revision: Optional[str] = _optional_env("SLM_MODEL_REVISION")
-    max_new_tokens: int = _positive_int_env("SLM_MAX_NEW_TOKENS", 160)
-    # FLAN-T5's supported encoder window is 512 tokens. Longer weekly inputs
-    # are handled by the summarizer's batching + consolidation pipeline.
-    max_input_tokens: int = _positive_int_env("SLM_MAX_INPUT_TOKENS", 512)
+    max_new_tokens: int = _positive_int_env("SLM_MAX_NEW_TOKENS", 64)
+    max_input_tokens: int = _positive_int_env("SLM_MAX_INPUT_TOKENS", 768)
+    cpu_threads: int = _positive_int_env(
+        "MODEL_CPU_THREADS",
+        min(8, os.cpu_count() or 1),
+    )
+    torch_dtype: str = os.getenv("SLM_TORCH_DTYPE", "bfloat16").strip().lower()
     random_seed: int = int(os.getenv("SLM_RANDOM_SEED", "42"))
     do_sample: bool = False
     num_beams: int = 1
+    preload_models: bool = os.getenv("PRELOAD_RAG_MODELS", "true").strip().casefold() == "true"
 
 
 @dataclass(frozen=True)
@@ -77,8 +81,8 @@ class EvaluationSettings:
 GENERATION_SETTINGS = GenerationSettings()
 EVALUATION_SETTINGS = EvaluationSettings()
 
-PLAIN_PROMPT_VERSION = "plain-raw-week-paragraph-v5"
-RAG_PROMPT_VERSION = "rag-query-aware-cited-paragraph-v6"
+PLAIN_PROMPT_VERSION = "plain-local-summarizer-v1"
+RAG_PROMPT_VERSION = "rag-local-grounded-v1"
 # Retained only for compatibility with the optional legacy evaluator. The
 # interactive and primary research paths no longer regenerate or reject claims.
 RAG_REGENERATION_PROMPT_VERSION = "legacy-rag-regeneration-v2"

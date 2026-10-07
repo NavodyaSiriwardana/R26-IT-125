@@ -6,3 +6,9 @@ replay_pid*.log
 
 # IDE files
 *.iml
+
+graphify-out/
+AGENTS.md
+docs/
+scripts/
+.codex/

@@ -215,6 +215,7 @@ class Citation(BaseModel):
     source_type: str = "diary_entry"
     is_valid: bool = True
     validation_error: Optional[str] = None
+    attribution_method: Optional[str] = None
 
 
 class RagSummaryPoint(BaseModel):

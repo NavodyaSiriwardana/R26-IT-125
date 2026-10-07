@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../core/network/dio_client.dart';
 import '../models/Compare_summary_response.dart';
 import '../models/Diary_entry.dart';
@@ -19,6 +21,7 @@ class RagSummaryService {
   }) async {
     final response = await dioClient.dio.post(
       '/api/v1/rag-summary/weekly-summary',
+      options: Options(receiveTimeout: const Duration(minutes: 30)),
       data: {
         'user_id': userId,
         'query': query,

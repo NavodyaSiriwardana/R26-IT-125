@@ -8,17 +8,24 @@ aggregate metrics unavailable instead of manufacturing a score.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
 import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.config import GENERATION_SETTINGS
+
 from .date_utils import validate_week_range
+
 from .schemas import DiaryEntryResponse
 
+
+logger = logging.getLogger(f"uvicorn.error.{__name__}")
 
 DEFAULT_NLI_MODEL = "cross-encoder/nli-deberta-v3-base"
 DEFAULT_ENTAILMENT_THRESHOLD = 0.70
@@ -122,18 +129,53 @@ def _get_nli_pipeline(model_name: str, model_revision: Optional[str] = None) -> 
     with _nli_pipeline_lock:
         if _nli_pipeline is not None and _nli_pipeline_key == cache_key:
             return _nli_pipeline
-        from transformers import pipeline
+        load_started = time.perf_counter()
+        logger.info(
+            "rag_model_load_start role=nli model=%s revision=%s",
+            model_name,
+            model_revision or "default",
+        )
+        try:
+            from transformers import pipeline
+            import torch
 
-        model_kwargs: Dict[str, Any] = {
-            "task": "text-classification",
-            "model": model_name,
-            "tokenizer": model_name,
-            "top_k": None,
-        }
-        if model_revision:
-            model_kwargs["revision"] = model_revision
-        _nli_pipeline = pipeline(**model_kwargs)
+            try:
+                torch.set_num_threads(GENERATION_SETTINGS.cpu_threads)
+            except (RuntimeError, ValueError):
+                logger.warning("rag_cpu_thread_configuration_skipped role=nli")
+
+            model_kwargs: Dict[str, Any] = {
+                "task": "text-classification",
+                "model": model_name,
+                "tokenizer": model_name,
+                "top_k": None,
+                "local_files_only": True,
+                "device": -1,
+                "dtype": torch.bfloat16,
+            }
+            if model_revision:
+                model_kwargs["revision"] = model_revision
+            _nli_pipeline = pipeline(**model_kwargs)
+        except Exception as error:
+            logger.exception(
+                "rag_model_load_failed role=nli model=%s revision=%s "
+                "elapsed_ms=%.3f error_type=%s",
+                model_name,
+                model_revision or "default",
+                (time.perf_counter() - load_started) * 1000,
+                type(error).__name__,
+            )
+            raise
         _nli_pipeline_key = cache_key
+        logger.info(
+            "rag_model_load_success role=nli model=%s revision=%s elapsed_ms=%.3f "
+            "framework=%s device=%s",
+            model_name,
+            _observed_model_revision(_nli_pipeline, model_revision) or "unknown",
+            (time.perf_counter() - load_started) * 1000,
+            getattr(_nli_pipeline, "framework", "unknown"),
+            getattr(_nli_pipeline, "device", "unknown"),
+        )
         return _nli_pipeline
 
 
@@ -147,6 +189,12 @@ def _resolve_model_revision(model_revision: Optional[str]) -> Optional[str]:
         model_revision if model_revision is not None else os.getenv(NLI_MODEL_REVISION_ENV)
     )
     return configured.strip() if configured else None
+
+
+def preload_nli_model() -> None:
+    """Load the configured local NLI evaluator before interactive requests."""
+
+    _get_nli_pipeline(_resolve_model_name(None), _resolve_model_revision(None))
 
 
 def _resolve_threshold(threshold: Optional[float]) -> float:
@@ -744,16 +792,14 @@ def _flatten_nli_output(value: Any) -> List[Mapping[str, Any]]:
     return []
 
 
-def _run_nli(
+def _scores_from_nli_output(
+    raw_result: Any,
     runner: Any,
-    premise: str,
-    hypothesis: str,
     *,
     model_name: str,
 ) -> Dict[str, float]:
-    raw_result = runner(
-        {"text": premise, "text_pair": hypothesis}, truncation=True, top_k=None
-    )
+    """Normalize one classifier result into the three required NLI scores."""
+
     scores: Dict[str, float] = {}
     for item in _flatten_nli_output(raw_result):
         label = _canonical_label(
@@ -770,6 +816,41 @@ def _run_nli(
     if not {"entailment", "contradiction", "neutral"}.issubset(scores):
         raise RuntimeError("The NLI model did not return all three required labels.")
     return scores
+
+
+def _run_nli(
+    runner: Any,
+    premise: str,
+    hypothesis: str,
+    *,
+    model_name: str,
+) -> Dict[str, float]:
+    raw_result = runner(
+        {"text": premise, "text_pair": hypothesis}, truncation=True, top_k=None
+    )
+    return _scores_from_nli_output(raw_result, runner, model_name=model_name)
+
+
+def _run_nli_batch(
+    runner: Any,
+    pairs: Sequence[tuple[str, str]],
+    *,
+    model_name: str,
+) -> List[Dict[str, float]]:
+    raw_results = runner(
+        [{"text": premise, "text_pair": hypothesis} for premise, hypothesis in pairs],
+        truncation=True,
+        top_k=None,
+        batch_size=min(8, len(pairs)),
+    )
+    if not isinstance(raw_results, Sequence) or isinstance(raw_results, (str, bytes)):
+        raise RuntimeError("The NLI model returned an invalid batch result.")
+    if len(raw_results) != len(pairs):
+        raise RuntimeError("The NLI model returned the wrong number of batch results.")
+    return [
+        _scores_from_nli_output(item, runner, model_name=model_name)
+        for item in raw_results
+    ]
 
 
 def _classify_nli(scores: Mapping[str, float], threshold: float) -> str:
@@ -948,6 +1029,7 @@ def _evaluate_claims_with_nli(
     for claim_detail, premise in zip(result["per_claim"], premise_by_claim):
         claim_detail["_requires_nli"] = bool(premise)
     try:
+        pending: List[tuple[Dict[str, Any], str]] = []
         for claim_detail, premise in zip(result["per_claim"], premise_by_claim):
             if not premise:
                 claim_detail.update(
@@ -960,15 +1042,29 @@ def _evaluate_claims_with_nli(
                     }
                 )
                 continue
-            if runner is None:
-                runner = _get_nli_pipeline(model_name, model_revision)
-                result["nli_model_revision"] = _observed_model_revision(runner, model_revision)
-            scores = _run_nli(
+            pending.append((claim_detail, premise))
+
+        if pending and runner is None:
+            runner = _get_nli_pipeline(model_name, model_revision)
+            result["nli_model_revision"] = _observed_model_revision(runner, model_revision)
+            scores_by_claim = _run_nli_batch(
                 runner,
-                premise,
-                claim_detail["hypothesis"],
+                [(premise, detail["hypothesis"]) for detail, premise in pending],
                 model_name=model_name,
             )
+        else:
+            # Preserve the simple one-at-a-time contract for injected test runners.
+            scores_by_claim = [
+                _run_nli(
+                    runner,
+                    premise,
+                    detail["hypothesis"],
+                    model_name=model_name,
+                )
+                for detail, premise in pending
+            ]
+
+        for (claim_detail, _), scores in zip(pending, scores_by_claim):
             classification = _classify_nli(scores, threshold)
             reason_by_class = {
                 "entailed": entailed_reason,
@@ -985,6 +1081,12 @@ def _evaluate_claims_with_nli(
                 }
             )
     except Exception as error:
+        logger.error(
+            "rag_model_execution_failed role=nli model=%s error_type=%s claim_count=%d",
+            model_name,
+            type(error).__name__,
+            len(result["per_claim"]),
+        )
         return _finalize_unavailable(result, f"NLI evaluation failed ({type(error).__name__}).")
     for item in result["per_claim"]:
         item.pop("_requires_nli", None)
@@ -1324,6 +1426,7 @@ def evaluate_rag_summary_groundedness(
         invalid_ids = list(dict.fromkeys(invalid_ids))
         per_claim.append(
             {
+                "claim_id": record.get("claim_id"),
                 "claim": record["claim"], "hypothesis": record["hypothesis"],
                 "cited_evidence_ids": cited_ids, "valid_evidence_ids": valid_ids,
                 "invalid_evidence_ids": invalid_ids, "evidence_ids": valid_ids,

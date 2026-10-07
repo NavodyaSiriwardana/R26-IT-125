@@ -14,14 +14,14 @@ class SummaryGenerationDetailsScreen extends StatelessWidget {
         keyName: 'plain_slm',
         title: 'Condition A: Plain summary',
         description:
-            'The model receives every activity from the selected week as ordinary plain text and a standard summarization prompt.',
+            'The shared local summarization model receives every activity from the selected week as ordinary text and generates one concise reflection.',
         result: summary.plainSlm,
       ),
       _ConditionSpec(
         keyName: 'rag',
         title: 'Condition B: Grounded RAG summary',
         description:
-            'Whole-week requests retrieve all activities from the selected week, while focused questions use relevance. The model is instructed to use only retrieved evidence and omit unsupported details.',
+            'The same local model summarizes retrieved diary evidence. Source links are preserved or attached to generated claims, then DeBERTa checks whether those claims are supported.',
         result: summary.rag,
       ),
     ];
@@ -77,6 +77,11 @@ class _ConditionPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final result = spec.result;
     final provenance = _generationProvenance(result);
+    final citations = {
+      for (final point in result.summaryPoints)
+        for (final citation in point.citations)
+          if (citation.evidenceId.isNotEmpty) citation.evidenceId: citation,
+    }.values.toList();
 
     return Container(
       key: ValueKey('condition-${spec.keyName}'),
@@ -121,7 +126,7 @@ class _ConditionPanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           const Text(
-            'MODEL OUTPUT',
+            'MODEL-GENERATED OUTPUT',
             style: TextStyle(
               color: Color(0xFFB8B4D8),
               fontSize: 10,
@@ -132,7 +137,7 @@ class _ConditionPanel extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             result.summaryText.isEmpty
-                ? 'No model output was returned for this condition.'
+                ? 'No summary was returned for this condition.'
                 : result.summaryText,
             style: TextStyle(
               color: result.summaryText.isEmpty
@@ -143,6 +148,32 @@ class _ConditionPanel extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (spec.keyName == 'rag' && citations.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'SOURCES',
+              style: TextStyle(
+                color: Color(0xFFB8B4D8),
+                fontSize: 10,
+                letterSpacing: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            for (final entry in citations.asMap().entries)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '[${entry.key + 1}] ${entry.value.sourcePreview}',
+                  style: const TextStyle(
+                    color: Color(0xFF87F5D0),
+                    fontSize: 11,
+                    height: 1.4,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+          ],
           const SizedBox(height: 16),
           _MetricGrid(result: result),
           if (provenance.isNotEmpty) ...[
@@ -251,7 +282,7 @@ class _HallucinationComparisonCard extends StatelessWidget {
               ),
               children: const [
                 Text(
-                  'A local NLI model checks each generated factual claim against short, relevant canonical diary evidence; RAG claims are checked against their cited records. Claim counts are separate from diary-entry coverage, and non-entailed results remain estimates rather than proven hallucinations.',
+                  'Claims are calculated from canonical diary fields. RAG claims also carry the exact diary-entry IDs used for each aggregate, so support and coverage do not depend on another model interpreting the text.',
                   style: TextStyle(
                     color: Color(0xFF9894BB),
                     fontSize: 10,
@@ -533,7 +564,7 @@ class _IntroCard extends StatelessWidget {
           ),
           SizedBox(height: 8),
           Text(
-            'Both conditions use the same local model, week, query, and decoding settings. Their input method and prompt differ. Claim support is calculated from generated factual claims; retrieval and entry coverage are calculated from diary entries.',
+            'Both conditions use the same local model, week, query, and decoding settings. DeBERTa evaluates generated factual claims against canonical diary evidence; RAG additionally exposes the supporting entry links.',
             style: TextStyle(
               color: Color(0xFFB8B4D8),
               fontSize: 13,
@@ -547,11 +578,7 @@ class _IntroCard extends StatelessWidget {
   }
 }
 
-String? _fractionDetails(
-  double? count,
-  double? total,
-  String description,
-) {
+String? _fractionDetails(double? count, double? total, String description) {
   if (count == null || total == null) return null;
   return '${count.round()} of ${total.round()} $description';
 }

@@ -42,6 +42,9 @@ htmlcov/
 .vscode/
 .idea/
 
+# Tests
+tests/
+
 # OS files
 .DS_Store
 Thumbs.db

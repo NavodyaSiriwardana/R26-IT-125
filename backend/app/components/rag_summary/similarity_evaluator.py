@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
+import time
 from collections.abc import Callable
 from typing import Any, Dict, Optional
 
+
+
+logger = logging.getLogger(f"uvicorn.error.{__name__}")
 
 DEFAULT_BERTSCORE_MODEL = "distilbert-base-uncased"
 BERTSCORE_MODEL_ENV = "BERTSCORE_MODEL_NAME"
@@ -21,9 +26,25 @@ bert_score: Optional[Callable[..., Any]] = None
 def _get_bert_score_function() -> Callable[..., Any]:
     global bert_score
     if bert_score is None:
-        from bert_score import score as bert_score_function
+        load_started = time.perf_counter()
+        logger.info("rag_model_load_start role=bertscore_library")
+        try:
+            from bert_score import score as bert_score_function
 
-        bert_score = bert_score_function
+            bert_score = bert_score_function
+        except Exception as error:
+            logger.exception(
+                "rag_model_load_failed role=bertscore_library elapsed_ms=%.3f "
+                "error_type=%s runtime=%s",
+                (time.perf_counter() - load_started) * 1000,
+                type(error).__name__,
+                "local",
+            )
+            raise
+        logger.info(
+            "rag_model_load_success role=bertscore_library elapsed_ms=%.3f",
+            (time.perf_counter() - load_started) * 1000,
+        )
     return bert_score
 
 
@@ -81,6 +102,11 @@ def evaluate_bertscore(
             model=resolved_model,
             metric="bertscore_f1",
         )
+    evaluation_started = time.perf_counter()
+    logger.info(
+        "rag_model_evaluation_start role=bertscore model=%s",
+        resolved_model,
+    )
     try:
         score_function = scorer or _get_bert_score_function()
         _, _, f1_scores = score_function(
@@ -97,14 +123,28 @@ def evaluate_bertscore(
         value = float(mean_score)
         if not math.isfinite(value):
             raise ValueError("BERTScore returned a non-finite value.")
-        return _metric_result(
+        result = _metric_result(
             status="available",
             value=round(value, 4),
             reason=None,
             model=resolved_model,
             metric="bertscore_f1",
         )
+        logger.info(
+            "rag_model_evaluation_success role=bertscore model=%s elapsed_ms=%.3f",
+            resolved_model,
+            (time.perf_counter() - evaluation_started) * 1000,
+        )
+        return result
     except Exception as error:
+        logger.error(
+            "rag_model_evaluation_failed role=bertscore model=%s elapsed_ms=%.3f "
+            "error_type=%s runtime=%s",
+            resolved_model,
+            (time.perf_counter() - evaluation_started) * 1000,
+            type(error).__name__,
+            "local",
+        )
         return _metric_result(
             status="unavailable",
             value=None,

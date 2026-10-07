@@ -3,8 +3,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/components/rag_summary/models/Compare_summary_response.dart';
 import 'package:frontend/components/rag_summary/screens/Summary_generation_details_screen.dart';
 import 'package:frontend/components/rag_summary/screens/Summary_result_screen.dart';
+import 'package:frontend/components/rag_summary/widgets/weekly_summary_progress.dart';
 
 void main() {
+  testWidgets('weekly summary progress updates after five seconds', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: WeeklySummaryProgress())),
+    );
+
+    expect(find.text('Creating your weekly reflection…'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      weeklySummaryProgressMessages.any(
+        (message) => find.text(message).evaluate().isNotEmpty,
+      ),
+      isTrue,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
     'weekly result shows uncited RAG text without verification jargon',
     (tester) async {
