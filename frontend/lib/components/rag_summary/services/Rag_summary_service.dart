@@ -17,7 +17,6 @@ class RagSummaryService {
     String? weekEnd,
     int topK = 8,
     String retrievalMode = 'auto',
-    bool enableSlmFeedback = false,
   }) async {
     final response = await dioClient.dio.post(
       '/api/v1/rag-summary/weekly-summary',
@@ -29,7 +28,6 @@ class RagSummaryService {
         'week_end': weekEnd,
         'top_k': topK,
         'retrieval_mode': retrievalMode,
-        'enable_slm_feedback': enableSlmFeedback,
       },
     );
 

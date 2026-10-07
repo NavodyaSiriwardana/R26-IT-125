@@ -15,7 +15,7 @@ from .chroma_store import (
     retrieve_weekly_evidence,
 )
 from .date_utils import utc_now_iso, validate_week_range
-from .feedback_generator import generate_feedback_from_rag_evidence
+from .feedback_generator import generate_feedback_from_rag_summary
 from .firestore_store import (
     list_diary_entries_for_week,
     save_summary,
@@ -543,9 +543,7 @@ def run_rag_condition(
         allowed_evidence_ids=retrieved_id_list,
     )
 
-    # Repair only contradicted/unsupported points against their own cited
-    # evidence. This avoids cross-entry fact mixing while keeping the output
-    # model-generated.
+    
     repair_calls: List[Dict[str, Any]] = []
     if evaluation.get("status") == "available":
         claims_by_id: Dict[str, List[Dict[str, Any]]] = {}
@@ -701,27 +699,6 @@ def run_rag_condition(
         "retrieval": dict(retrieval),
         "latency_ms": round((time.perf_counter() - started) * 1000, 3),
     }
-
-
-def _current_week_context(
-    entries: Sequence[DiaryEntryResponse],
-    *,
-    user_id: str,
-    week_start: str,
-    week_end: str,
-) -> List[dict]:
-    output = []
-    for item in build_general_week_evidence(
-        entries,
-        user_id=user_id,
-        week_start=week_start,
-        week_end=week_end,
-    ):
-        current = dict(item)
-        current["context_role"] = "current_week"
-        current["retrieval_method"] = "current_week_all"
-        output.append(current)
-    return output
 
 
 def _comparison_result(
@@ -911,7 +888,7 @@ def _empty_feedback() -> Dict[str, Any]:
         "evidence_ids": [],
         "based_on_evidence_ids": [],
         "abstained": True,
-        "generation_method": "rule_based",
+        "generation_method": "not_applicable",
         "fallback_reason": "no_weekly_entries",
     }
 
@@ -1088,17 +1065,7 @@ def generate_weekly_summary(request: WeeklySummaryRequest) -> WeeklySummaryRespo
 
         displayed_evaluation = rag.get("evaluation", {})
 
-        current_evidence = _current_week_context(
-            entries,
-            user_id=user_id,
-            week_start=resolved_start,
-            week_end=resolved_end,
-        )
-        feedback = generate_feedback_from_rag_evidence(
-            retrieved_entries=entries,
-            retrieved_evidence=current_evidence,
-            use_slm=bool(request_data.get("enable_slm_feedback", False)),
-        )
+        feedback = generate_feedback_from_rag_summary(summary_points)
     else:
         experiment = _empty_experiment(
             user_id=user_id,

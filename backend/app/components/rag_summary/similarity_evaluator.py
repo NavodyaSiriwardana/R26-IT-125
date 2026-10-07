@@ -16,10 +16,8 @@ logger = logging.getLogger(f"uvicorn.error.{__name__}")
 
 DEFAULT_BERTSCORE_MODEL = "distilbert-base-uncased"
 BERTSCORE_MODEL_ENV = "BERTSCORE_MODEL_NAME"
-BERTSCORE_MODEL = DEFAULT_BERTSCORE_MODEL  # Deprecated public constant alias.
+BERTSCORE_MODEL = DEFAULT_BERTSCORE_MODEL 
 
-# Patchable while ensuring importing this module never imports/model-loads
-# BERTScore eagerly.
 bert_score: Optional[Callable[..., Any]] = None
 
 

@@ -1,224 +1,18 @@
-import json
 import re
-from typing import List, Dict, Any, Optional, Callable
+import time
+from pathlib import Path
+from threading import Lock
+from typing import Any, Dict, List, Sequence
 
 from app.config import FEEDBACK_PROMPT_VERSION
 
-from .schemas import DiaryEntryResponse
 
-
-POSITIVE_MOODS = {
-    "happy",
-    "motivated",
-    "calm",
-    "relaxed",
-    "focused",
-    "confident",
-    "good",
-    "excited",
-}
-
-NEGATIVE_MOODS = {
-    "sad",
-    "stressed",
-    "tired",
-    "bored",
-    "angry",
-    "anxious",
-    "worried",
-    "frustrated",
-    "low",
-}
-
-
-def _normalize(value: str) -> str:
-    return value.strip().lower() if value else ""
-
-
-def _mood_score(mood: str) -> int:
-    normalized = _normalize(mood)
-
-    if normalized in POSITIVE_MOODS:
-        return 1
-
-    if normalized in NEGATIVE_MOODS:
-        return -1
-
-    return 0
-
-
-def _detect_mood_signal(entries: List[DiaryEntryResponse]) -> str:
-    if not entries:
-        return "unknown"
-
-    before_total = sum(_mood_score(entry.mood_before) for entry in entries)
-    after_total = sum(_mood_score(entry.mood_after) for entry in entries)
-
-    if before_total < after_total:
-        return "negative_to_positive"
-
-    if before_total > after_total:
-        return "positive_to_negative"
-
-    if after_total < 0:
-        return "mostly_negative"
-
-    if after_total > 0:
-        return "mostly_positive"
-
-    return "neutral"
-
-
-def _detect_productivity_signal(entries: List[DiaryEntryResponse]) -> str:
-    if not entries:
-        return "unknown"
-
-    productivity_values = [_normalize(entry.productivity_level) for entry in entries]
-
-    high_count = productivity_values.count("high")
-    medium_count = productivity_values.count("medium")
-    low_count = productivity_values.count("low")
-
-    if high_count >= medium_count and high_count >= low_count:
-        return "high"
-
-    if low_count > high_count and low_count >= medium_count:
-        return "low"
-
-    return "medium"
-
-
-def _detect_task_signal(entries: List[DiaryEntryResponse]) -> str:
-    if not entries:
-        return "unknown"
-
-    outcomes = [_normalize(entry.task_outcome) for entry in entries]
-
-    completed_count = sum(
-        1 for outcome in outcomes
-        if outcome in {"completed", "done", "finished", "success"}
-    )
-
-    incomplete_count = len(outcomes) - completed_count
-
-    if completed_count > incomplete_count:
-        return "mostly_completed"
-
-    if incomplete_count > completed_count:
-        return "mostly_incomplete"
-
-    return "mixed"
-
-
-def _get_retrieved_evidence_ids(retrieved_evidence: List[Dict[str, Any]]) -> List[str]:
-    evidence_ids = []
-
-    for evidence in retrieved_evidence:
-        evidence_id = evidence.get("evidence_id")
-
-        if not evidence_id:
-            metadata = evidence.get("metadata", {})
-            evidence_id = metadata.get("evidenceId") or metadata.get("evidence_id")
-
-        if evidence_id and evidence_id not in evidence_ids:
-            evidence_ids.append(evidence_id)
-
-    return evidence_ids
-
-
-def _generate_rule_based_feedback(
-    retrieved_entries: List[DiaryEntryResponse],
-    retrieved_evidence: List[Dict[str, Any]],
-    *,
-    fallback_reason: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Generates safe, demo-friendly feedback using structured diary fields.
-
-    This intentionally does not use the plain SLM summary.
-    Feedback is calculated from the current week's recorded diary entries.
-    """
-
-    evidence_ids = _get_retrieved_evidence_ids(retrieved_evidence)
-
-    if not retrieved_entries:
-        return {
-            "feedback_type": "wellbeing_productivity",
-            "mood_signal": "unknown",
-            "productivity_signal": "unknown",
-            "message": (
-                "There are no diary entries available for feedback this week."
-            ),
-            "action": "Record an activity before requesting weekly feedback.",
-            "evidence_ids": evidence_ids,
-            "based_on_evidence_ids": evidence_ids,
-            "abstained": True,
-            "generation_method": (
-                "rule_based_fallback" if fallback_reason else "rule_based"
-            ),
-            "fallback_reason": fallback_reason,
-        }
-
-    mood_signal = _detect_mood_signal(retrieved_entries)
-    productivity_signal = _detect_productivity_signal(retrieved_entries)
-    task_signal = _detect_task_signal(retrieved_entries)
-
-    if mood_signal == "negative_to_positive" and productivity_signal == "high":
-        message = (
-            "Your diary entries show improved mood alongside high productivity."
-        )
-        action = "Keep the working pattern that helped, with a short break after focused work."
-
-    elif mood_signal == "negative_to_positive":
-        message = (
-            "Your diary entries show mood improvement across the recorded activities."
-        )
-        action = "Repeat a helpful routine and keep the next task small and manageable."
-
-    elif mood_signal in {"positive_to_negative", "mostly_negative"}:
-        message = (
-            "Your diary entries show a lower mood pattern after the recorded activities."
-        )
-        action = "Reduce the next task, pause briefly, and choose one manageable step."
-
-    elif productivity_signal == "low":
-        message = (
-            "Your diary entries show low self-rated productivity."
-        )
-        action = "Reduce the next task to one small step and reassess after completing it."
-
-    elif task_signal == "mostly_incomplete":
-        message = (
-            "Your diary entries show that recorded tasks were mostly incomplete."
-        )
-        action = "Choose the most urgent unfinished task and complete its first small step."
-
-    elif productivity_signal == "high":
-        message = (
-            "Your diary entries show high self-rated productivity."
-        )
-        action = "Keep the same working pattern and include a short break after focused work."
-
-    else:
-        message = (
-            "Your diary entries show mixed or stable patterns."
-        )
-        action = "Keep recording mood, productivity, and outcomes to build a clearer pattern."
-
-    return {
-        "feedback_type": "wellbeing_productivity",
-        "mood_signal": mood_signal,
-        "productivity_signal": productivity_signal,
-        "message": message,
-        "action": action,
-        "evidence_ids": evidence_ids,
-        "based_on_evidence_ids": evidence_ids,
-        "abstained": False,
-        "generation_method": (
-            "rule_based_fallback" if fallback_reason else "rule_based"
-        ),
-        "fallback_reason": fallback_reason,
-    }
+_FEEDBACK_MODEL_NAME = "microsoft/Phi-4-mini-instruct-onnx"
+_FEEDBACK_MODEL_SUBDIR = "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4"
+_FEEDBACK_MAX_NEW_TOKENS = 128
+_feedback_model = None
+_feedback_tokenizer = None
+_feedback_model_lock = Lock()
 
 
 _DIAGNOSIS_RE = re.compile(
@@ -226,151 +20,178 @@ _DIAGNOSIS_RE = re.compile(
     r"mental illness|personality disorder|clinical disorder|suicid(?:e|al))\b",
     re.IGNORECASE,
 )
-_NUMERIC_CLAIM_RE = re.compile(r"(?<![A-Za-z])\d+(?:\.\d+)?\s*%?")
+
+_CITATION_RE = re.compile(r"\[\s*\d+\s*\]?")
 
 
-def _feedback_prompt(
-    *,
-    mood_signal: str,
-    productivity_signal: str,
-    task_signal: str,
-    evidence_ids: List[str],
-) -> str:
+def _summary_text(summary_points: Sequence[Dict[str, Any]]) -> str:
+    return "\n".join(
+        f"- {text}"
+        for point in summary_points
+        if (text := str(point.get("text") or "").strip())
+    )
+
+
+def _summary_evidence_ids(summary_points: Sequence[Dict[str, Any]]) -> List[str]:
+    return list(
+        dict.fromkeys(
+            evidence_id
+            for point in summary_points
+            for citation in point.get("citations") or []
+            if (evidence_id := str(citation.get("evidence_id") or "").strip())
+        )
+    )
+
+
+def _clean_rag_summary(rag_summary: str) -> str:
+    """Remove citation noise and exact repeated sentences before generation."""
+
+    without_citations = _CITATION_RE.sub("", rag_summary)
+    normalized = re.sub(r"[ \t]+", " ", without_citations)
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", normalized)
+
+    unique_sentences = []
+    seen = set()
+    for sentence in sentences:
+        cleaned = re.sub(r"^\s*-\s*", "", sentence).strip()
+        if not cleaned:
+            continue
+
+        comparison_key = re.sub(r"\W+", " ", cleaned).lower().strip()
+        if comparison_key in seen:
+            continue
+
+        seen.add(comparison_key)
+        unique_sentences.append(f"- {cleaned}")
+
+    return "\n".join(unique_sentences)
+
+
+def _feedback_prompt(rag_summary: str) -> str:
+    clean_summary = _clean_rag_summary(rag_summary)
+
     return (
-        "Create brief, non-medical wellbeing and productivity feedback from the "
-        "backend-calculated categorical signals below. Do not calculate statistics, "
-        "introduce numbers, diagnose a condition, or add a factual premise not in the "
-        "signals. Cite only supplied Evidence IDs. Return JSON only with exactly these "
-        "keys: message, action, evidence_ids, abstained.\n\n"
-        f"Mood signal: {mood_signal}\n"
-        f"Productivity signal: {productivity_signal}\n"
-        f"Task signal: {task_signal}\n"
-        f"Verified Evidence IDs: {', '.join(evidence_ids)}"
+        "Based on following records, what should I do next week?.\n\n"
+        f"Activity records:\n{clean_summary}\n\n"
+        "Analysis and recommendations:"
     )
 
 
-def _parse_feedback_json(raw_text: str) -> Dict[str, Any]:
-    start = raw_text.find("{")
-    end = raw_text.rfind("}")
-    if start < 0 or end <= start:
-        raise ValueError("feedback_json_not_found")
-    parsed = json.loads(raw_text[start : end + 1])
-    if not isinstance(parsed, dict):
-        raise ValueError("feedback_json_must_be_object")
-    required = {"message", "action", "evidence_ids", "abstained"}
-    if not required.issubset(parsed):
-        raise ValueError("feedback_json_missing_fields")
-    if not isinstance(parsed["message"], str) or not isinstance(parsed["action"], str):
-        raise ValueError("feedback_text_fields_invalid")
-    if not isinstance(parsed["evidence_ids"], list):
-        raise ValueError("feedback_evidence_ids_invalid")
-    if not isinstance(parsed["abstained"], bool):
-        raise ValueError("feedback_abstained_invalid")
-    return parsed
+def _feedback_model_path() -> Path:
+    from huggingface_hub import snapshot_download
 
-
-def _validate_slm_feedback(
-    parsed: Dict[str, Any],
-    *,
-    verified_entries: List[DiaryEntryResponse],
-    valid_evidence_ids: List[str],
-    nli_runner: Optional[Callable[..., Any]] = None,
-) -> Optional[str]:
-    cited_ids = [str(value).strip() for value in parsed["evidence_ids"]]
-    if any(evidence_id not in set(valid_evidence_ids) for evidence_id in cited_ids):
-        return "feedback_contains_unverified_evidence_id"
-
-    combined_text = f"{parsed['message']} {parsed['action']}"
-    if _NUMERIC_CLAIM_RE.search(combined_text):
-        return "feedback_introduced_numerical_claim"
-    if _DIAGNOSIS_RE.search(combined_text):
-        return "feedback_contains_medical_or_mental_health_diagnosis"
-    if parsed["abstained"]:
-        return None
-    if not parsed["message"].strip() or not parsed["action"].strip():
-        return "feedback_text_is_blank"
-
-    # Only the message is treated as a factual premise; the action is advice.
-    from .hallucination_evaluator import evaluate_plain_summary_groundedness
-
-    evaluation = evaluate_plain_summary_groundedness(
-        parsed["message"],
-        verified_entries,
-        nli_runner=nli_runner,
+    snapshot = snapshot_download(
+        _FEEDBACK_MODEL_NAME,
+        allow_patterns=[f"{_FEEDBACK_MODEL_SUBDIR}/*"],
+        local_files_only=True,
     )
-    if evaluation.get("status") != "available":
-        return "feedback_nli_validation_unavailable"
-    if evaluation.get("unsupported_claim_rate") != 0.0:
-        return "feedback_premise_not_entailed"
-    return None
+    return Path(snapshot) / _FEEDBACK_MODEL_SUBDIR
 
 
-def generate_feedback_from_rag_evidence(
-    retrieved_entries: List[DiaryEntryResponse],
-    retrieved_evidence: List[Dict[str, Any]],
-    *,
-    use_slm: bool = False,
-    nli_runner: Optional[Callable[..., Any]] = None,
+def _generate_feedback_text(prompt: str) -> tuple[str, Dict[str, Any]]:
+    global _feedback_model, _feedback_tokenizer
+
+    import onnxruntime_genai as og
+
+    started = time.perf_counter()
+    with _feedback_model_lock:
+        model_cache_hit = _feedback_model is not None
+        if not model_cache_hit:
+            _feedback_model = og.Model(str(_feedback_model_path()))
+            _feedback_tokenizer = og.Tokenizer(_feedback_model)
+
+        chat_prompt = (
+            "<|system|>You provide concise, grounded, non-medical wellbeing and "
+            "productivity feedback.<|end|><|user|>"
+            f"{prompt}<|end|><|assistant|>"
+        )
+        input_tokens = _feedback_tokenizer.encode(chat_prompt)
+        params = og.GeneratorParams(_feedback_model)
+        params.set_search_options(
+            max_length=len(input_tokens) + _FEEDBACK_MAX_NEW_TOKENS,
+            do_sample=False,
+            num_beams=1,
+        )
+        generator = og.Generator(_feedback_model, params)
+        generator.append_tokens(input_tokens)
+        stream = _feedback_tokenizer.create_stream()
+        output = []
+        while not generator.is_done():
+            generator.generate_next_token()
+            output.append(stream.decode(generator.get_next_tokens()[0]))
+        del generator
+        text = "".join(output).strip()
+
+    return text, {
+        "status": "success",
+        "model_name": _FEEDBACK_MODEL_NAME,
+        "model_format": "onnx-int4-rtn",
+        "execution_provider": "cpu",
+        "prompt_version": FEEDBACK_PROMPT_VERSION,
+        "decoding_parameters": {
+            "max_new_tokens": _FEEDBACK_MAX_NEW_TOKENS,
+            "do_sample": False,
+            "num_beams": 1,
+        },
+        "model_cache_hit": model_cache_hit,
+        "latency_ms": round((time.perf_counter() - started) * 1000, 3),
+    }
+
+
+def _unavailable_feedback(
+    reason: str,
+    evidence_ids: Sequence[str] = (),
 ) -> Dict[str, Any]:
-    """Generate optional validated SLM feedback, or explicit rule-based fallback.
+    ids = list(evidence_ids)
+    return {
+        "feedback_type": "wellbeing_productivity",
+        "mood_signal": "",
+        "productivity_signal": "",
+        "message": "Feedback could not be generated from this week's summary.",
+        "action": "",
+        "evidence_ids": ids,
+        "based_on_evidence_ids": ids,
+        "abstained": True,
+        "generation_method": "generative_unavailable",
+        "fallback_reason": reason,
+    }
 
-    Feedback is a separate feature and is never counted as one of the three
-    summarization experiment conditions.
-    """
 
-    if not use_slm:
-        return _generate_rule_based_feedback(retrieved_entries, retrieved_evidence)
+def generate_feedback_from_rag_summary(
+    summary_points: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Generate Phi-4 Mini INT4 feedback from the displayed RAG summary."""
 
-    evidence_ids = _get_retrieved_evidence_ids(retrieved_evidence)
-    if not retrieved_entries or not evidence_ids:
-        return _generate_rule_based_feedback(
-            retrieved_entries,
-            retrieved_evidence,
-            fallback_reason="no_verified_feedback_evidence",
-        )
+    rag_summary = _summary_text(summary_points)
+    evidence_ids = _summary_evidence_ids(summary_points)
+    if not rag_summary:
+        return _unavailable_feedback("no_supported_rag_summary", evidence_ids)
 
-    mood_signal = _detect_mood_signal(retrieved_entries)
-    productivity_signal = _detect_productivity_signal(retrieved_entries)
-    task_signal = _detect_task_signal(retrieved_entries)
     try:
-        from .summarizers import generate_text
+        message, generation = _generate_feedback_text(
+            _feedback_prompt(rag_summary)
+        )
+        if not message:
+            raise ValueError("feedback_text_is_blank")
+        if _DIAGNOSIS_RE.search(message):
+            raise ValueError("feedback_contains_medical_or_mental_health_diagnosis")
 
-        generated = generate_text(
-            _feedback_prompt(
-                mood_signal=mood_signal,
-                productivity_signal=productivity_signal,
-                task_signal=task_signal,
-                evidence_ids=evidence_ids,
-            ),
-            prompt_version=FEEDBACK_PROMPT_VERSION,
-            retrieved_evidence_ids=evidence_ids,
-        )
-        parsed = _parse_feedback_json(generated.text)
-        validation_error = _validate_slm_feedback(
-            parsed,
-            verified_entries=retrieved_entries,
-            valid_evidence_ids=evidence_ids,
-            nli_runner=nli_runner,
-        )
-        if validation_error:
-            raise ValueError(validation_error)
-        cited_ids = list(dict.fromkeys(str(value).strip() for value in parsed["evidence_ids"]))
+        print(f"[Feedback] Generated feedback from RAG summary: {message}")
         return {
             "feedback_type": "wellbeing_productivity",
-            "mood_signal": mood_signal,
-            "productivity_signal": productivity_signal,
-            "message": parsed["message"].strip(),
-            "action": parsed["action"].strip(),
-            "evidence_ids": cited_ids,
-            "based_on_evidence_ids": cited_ids,
-            "abstained": parsed["abstained"],
-            "generation_method": "slm_verified",
+            "mood_signal": "",
+            "productivity_signal": "",
+            "message": message,
+            "action": "",
+            "evidence_ids": evidence_ids,
+            "based_on_evidence_ids": evidence_ids,
+            "abstained": False,
+            "generation_method": "phi4_mini_int4_from_rag_summary",
             "fallback_reason": None,
-            "generation": generated.metadata,
+            "generation": generation,
         }
     except Exception as error:
-        return _generate_rule_based_feedback(
-            retrieved_entries,
-            retrieved_evidence,
-            fallback_reason=f"slm_feedback_validation_failed:{type(error).__name__}",
+        return _unavailable_feedback(
+            f"feedback_generation_failed:{type(error).__name__}",
+            evidence_ids,
         )

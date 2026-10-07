@@ -148,8 +148,6 @@ class WeeklySummaryPanel extends StatelessWidget {
                 ),
                 child: Text(
                   latest.feedbackMessage,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: DashboardColors.accentText,
                     fontSize: 11,

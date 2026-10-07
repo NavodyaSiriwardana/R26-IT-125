@@ -46,10 +46,7 @@ _CLAIM_SEGMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Plain summaries have no citations, so their NLI evidence must be selected from
-# the canonical week. Keeping this premise small avoids the tokenizer silently
-# dropping later records. Four entries still allow one compound sentence to
-# name several distinct activities.
+# Plain summaries have no citations, so their NLI evidence must be selected from the canonical week. 
 _PLAIN_EVIDENCE_SELECTION_METHOD = "deterministic_lexical_clause_coverage"
 _PLAIN_MAX_EVIDENCE_ENTRIES = 4
 _PLAIN_PREMISE_MAX_CHARS = 1800

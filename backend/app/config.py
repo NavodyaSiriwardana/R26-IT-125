@@ -86,7 +86,7 @@ RAG_PROMPT_VERSION = "rag-local-grounded-v1"
 # Retained only for compatibility with the optional legacy evaluator. The
 # interactive and primary research paths no longer regenerate or reject claims.
 RAG_REGENERATION_PROMPT_VERSION = "legacy-rag-regeneration-v2"
-FEEDBACK_PROMPT_VERSION = "structured-feedback-json-v2"
+FEEDBACK_PROMPT_VERSION = "rag-summary-feedback-v1"
 SUMMARY_SCHEMA_VERSION = "3.1"
 
 

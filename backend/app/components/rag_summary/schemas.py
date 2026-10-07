@@ -99,7 +99,7 @@ class DiaryEntryCreate(BaseModel):
         examples=["I struggled to finish the database assignment and felt mentally drained."],
     )
 
-    # Optional. If frontend does not send it, backend uses today's date.
+    
     entry_date: Optional[str] = Field(
         None,
         validation_alias=AliasChoices("entry_date", "entryDate"),
@@ -108,8 +108,7 @@ class DiaryEntryCreate(BaseModel):
 
 
 class DiaryEntryResponse(BaseModel):
-    # The identifier is supplied from the Firestore document snapshot. Integer
-    # values remain accepted for older in-memory/research callers.
+
     id: str | int
     user_id: str
     evidence_id: str
@@ -131,14 +130,13 @@ class DiaryEntryResponse(BaseModel):
     task_outcome: str
 
     specific_person: str = ""
-    # Compatibility projection for existing API consumers. It is populated
-    # from specificPerson, never read from a Firestore person_names field.
+
     person_names: Optional[str] = None
     health_status: str
 
     location_type: str = ""
     custom_location: str = ""
-    # Resolved display value derived from locationType/customLocation.
+
     location: str
     with_whom: str
 
@@ -149,8 +147,7 @@ class DiaryEntryResponse(BaseModel):
     week_end: str
 
     created_at: Optional[datetime] = None
-    # The final diary schema has no updatedAt field; retained only as an
-    # optional API compatibility value.
+
     updated_at: Optional[datetime] = None
 
 
@@ -179,7 +176,7 @@ class PlainSummaryRequest(BaseModel):
     week_start: Optional[str] = Field(None, examples=["2026-05-04"])
     week_end: Optional[str] = Field(None, examples=["2026-05-10"])
     reference_summary: Optional[str] = None
-    # Retained for request compatibility. Research weekly runs do not truncate.
+
     max_entries: Optional[int] = Field(default=None, ge=1)
 
 
@@ -277,22 +274,22 @@ class CompareSummaryRequest(BaseModel):
 # Stage 6
 class FeedbackResponse(BaseModel):
     feedback_type: str
-    mood_signal: str
-    productivity_signal: str
+    mood_signal: str = ""
+    productivity_signal: str = ""
     message: str
     action: str = ""
     evidence_ids: List[str] = Field(default_factory=list)
     based_on_evidence_ids: List[str] = Field(default_factory=list)
     abstained: bool = False
-    generation_method: str = "rule_based"
+    generation_method: str = "phi4_mini_int4_from_rag_summary"
     fallback_reason: Optional[str] = None
+    generation: Optional[Dict[str, Any]] = None
 
 class CompareSummaryResponse(BaseModel):
     query: str
     summary_type: str
     summary_points: List[RagSummaryPoint]
-    # Legacy diagnostic fields retained so old saved summaries still decode.
-    # New summaries leave them null; none of them gates or alters model output.
+
     hallucination_score: Optional[float] = None
     unsupported_claim_rate: Optional[float] = None
     grounded_claim_rate: Optional[float] = None
@@ -308,11 +305,11 @@ class WeeklySummaryRequest(BaseModel):
         examples=["Summarize my productivity and mood for this week and give feedback"],
     )
 
-    # Optional. Backend calculates current week if not provided.
+   
     week_start: Optional[str] = Field(None, examples=["2026-05-04"])
     week_end: Optional[str] = Field(None, examples=["2026-05-10"])
 
-    # max_entries is deprecated and ignored by controlled weekly research runs.
+
     max_entries: Optional[int] = Field(default=None, ge=1)
     top_k: int = Field(default=8, ge=1, examples=[8])
     retrieval_mode: Literal["auto", "all", "semantic"] = "auto"
@@ -320,8 +317,6 @@ class WeeklySummaryRequest(BaseModel):
         None,
         description="Human-written reference used only for ROUGE-L/BERTScore.",
     )
-    enable_slm_feedback: bool = False
-
 class WeeklySummaryResponse(CompareSummaryResponse):
     user_id: str
     week_start: str
@@ -392,7 +387,7 @@ class DashboardLatestSummaryPreview(BaseModel):
     rouge_l: Optional[float] = None
     generation_latency_ms: Optional[float] = None
     evaluation_status: str = "unavailable"
-    # Deprecated legacy field. Never derive or use this for research claims.
+
     evidence_accuracy: Optional[float] = None
 
 

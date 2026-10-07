@@ -20,7 +20,7 @@ _embedding_model = None
 
 
 def _create_embedding_model():
-    # Keep the heavyweight transformers import out of application startup.
+    # Keeping the heavyweight transformers import out of application startup.
     load_started = time.perf_counter()
     logger.info(
         "rag_model_load_start role=embedding model=%s",
@@ -406,7 +406,7 @@ def retrieve_weekly_evidence(
     if not topic_specific:
         return canonical_evidence
 
-    # Firestore remains canonical, but synchronizing the requested week here
+    # Firestore remains canonical, but synchronizing the requested week.
     # ensures older records are actually available to Chroma before querying.
     index_diary_entries(entries)
 

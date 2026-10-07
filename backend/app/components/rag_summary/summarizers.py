@@ -87,7 +87,7 @@ class _Seq2SeqPipelineCompat:
     def __call__(self, inputs, **kwargs):
         import torch
 
-        # Parameters that belong to tokenization, not model.generate()
+        
         truncation = kwargs.pop("truncation", True)
 
         encoded = self.tokenizer(
@@ -113,8 +113,7 @@ class _Seq2SeqPipelineCompat:
             skip_special_tokens=True,
         )
 
-        # Preserve the old pipeline return format:
-        # [{"generated_text": "..."}]
+    
         return [
             {"generated_text": text}
             for text in texts
@@ -227,12 +226,9 @@ def get_shared_decoding_parameters() -> Dict[str, Any]:
         "do_sample": False,
         "num_beams": GENERATION_SETTINGS.num_beams,
 
-        # Reduce repetitive local summarizer generations.
         "no_repeat_ngram_size": 3,
         "repetition_penalty": 1.05,
 
-        # Prevent beam search from strongly favoring unnecessarily
-        # long generations.
         "length_penalty": 1.0,
 
         "min_length": 0,
@@ -581,7 +577,6 @@ def _deduplicate_retrieved_evidence(
     for item in evidence_items:
         evidence_id = _evidence_id(item)
 
-        # Preserve entries without IDs rather than silently dropping them.
         if not evidence_id:
             result.append(item)
             continue
@@ -696,8 +691,7 @@ def build_rag_regeneration_prompt_from_blocks(
 
 
 def _prompt_token_count(prompt: str) -> int:
-    # Conservative estimate: token batching must not initialize Transformers
-    # before generation begins timing model setup.
+
     words = len(re.findall(r"\S+", prompt))
     return max(1, int(max(words * 1.4, len(prompt) / 4)) + 1)
 
@@ -1055,8 +1049,7 @@ def _split_generated_claims(raw_text: str) -> List[str]:
     normalized = raw_text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not normalized:
         return []
-    # Small models sometimes put a requested marker just after the period. Move
-    # it back onto the preceding sentence before sentence segmentation.
+
     normalized = re.sub(
         r"([.!?])\s+((?:\[[^\[\]]+\]\s*)+)(?=[A-Z0-9]|$)",
         r" \2\1 ",
@@ -1678,9 +1671,6 @@ def generate_rag_slm_summary(
 
     # ---------------------------------------------------------
     # Deterministic display paragraph.
-    #
-    # Do not add another abstractive generation pass here.
-    # That could remove citations or introduce new facts.
     # ---------------------------------------------------------
 
     paragraph = _normalize_generated_paragraph(
@@ -1736,8 +1726,7 @@ def generate_rag_slm_summary(
             require_full_coverage
         ),
 
-        # This now means whether the MODEL itself achieved the
-        # requested coverage when repair is disabled.
+     
         "coverage_contract_met": (
             not require_full_coverage
             or not remaining_missing_ids
