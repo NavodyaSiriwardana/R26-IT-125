@@ -5,8 +5,13 @@ Run only after installing requirements and setting RUN_REAL_MODEL_INTEGRATION=1:
 """
 
 import os
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import call, patch
+
+from huggingface_hub.errors import LocalEntryNotFoundError
 
 try:
     import pytest
@@ -15,11 +20,65 @@ try:
 except ImportError:  # unittest discovery still sees and skips this module.
     pytestmark = None
 
-from app.components.rag_summary import chroma_store, weekly_summary_service
+from app.components.rag_summary import (
+    chroma_store,
+    feedback_generator,
+    weekly_summary_service,
+)
 from app.components.rag_summary.schemas import DiaryEntryResponse
 
 
 ENABLED = os.getenv("RUN_REAL_MODEL_INTEGRATION") == "1"
+
+
+class FeedbackModelAvailabilityTests(unittest.TestCase):
+    @patch("huggingface_hub.snapshot_download")
+    def test_reuses_repo_model_after_cache_miss(self, download):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = Path(temp_dir) / "Phi-4-mini-instruct-onnx"
+            local_model = model_dir / feedback_generator._FEEDBACK_MODEL_SUBDIR
+            local_model.mkdir(parents=True)
+            download.side_effect = LocalEntryNotFoundError("not cached")
+
+            with patch.object(feedback_generator, "_FEEDBACK_MODEL_DIR", model_dir):
+                result = feedback_generator._feedback_model_path()
+
+        self.assertEqual(result, local_model)
+        download.assert_called_once_with(
+            feedback_generator._FEEDBACK_MODEL_NAME,
+            allow_patterns=[f"{feedback_generator._FEEDBACK_MODEL_SUBDIR}/*"],
+            local_files_only=True,
+        )
+
+    @patch("huggingface_hub.snapshot_download")
+    def test_downloads_to_repo_when_model_is_not_cached(self, download):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = Path(temp_dir) / "Phi-4-mini-instruct-onnx"
+            download.side_effect = [
+                LocalEntryNotFoundError("not cached"),
+                str(model_dir),
+            ]
+
+            with patch.object(feedback_generator, "_FEEDBACK_MODEL_DIR", model_dir):
+                result = feedback_generator._feedback_model_path()
+
+        pattern = [f"{feedback_generator._FEEDBACK_MODEL_SUBDIR}/*"]
+        self.assertEqual(result, model_dir / feedback_generator._FEEDBACK_MODEL_SUBDIR)
+        self.assertEqual(
+            download.call_args_list,
+            [
+                call(
+                    feedback_generator._FEEDBACK_MODEL_NAME,
+                    allow_patterns=pattern,
+                    local_files_only=True,
+                ),
+                call(
+                    feedback_generator._FEEDBACK_MODEL_NAME,
+                    allow_patterns=pattern,
+                    local_dir=model_dir,
+                ),
+            ],
+        )
 
 
 def _entry():

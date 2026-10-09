@@ -9,6 +9,9 @@ from app.config import FEEDBACK_PROMPT_VERSION
 
 _FEEDBACK_MODEL_NAME = "microsoft/Phi-4-mini-instruct-onnx"
 _FEEDBACK_MODEL_SUBDIR = "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4"
+_FEEDBACK_MODEL_DIR = (
+    Path(__file__).resolve().parents[3] / ".models" / "Phi-4-mini-instruct-onnx"
+)
 _FEEDBACK_MAX_NEW_TOKENS = 128
 _feedback_model = None
 _feedback_tokenizer = None
@@ -79,12 +82,24 @@ def _feedback_prompt(rag_summary: str) -> str:
 
 def _feedback_model_path() -> Path:
     from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import LocalEntryNotFoundError
 
-    snapshot = snapshot_download(
-        _FEEDBACK_MODEL_NAME,
-        allow_patterns=[f"{_FEEDBACK_MODEL_SUBDIR}/*"],
-        local_files_only=True,
-    )
+    allow_patterns = [f"{_FEEDBACK_MODEL_SUBDIR}/*"]
+    try:
+        snapshot = snapshot_download(
+            _FEEDBACK_MODEL_NAME,
+            allow_patterns=allow_patterns,
+            local_files_only=True,
+        )
+    except LocalEntryNotFoundError:
+        local_model = _FEEDBACK_MODEL_DIR / _FEEDBACK_MODEL_SUBDIR
+        if local_model.is_dir():
+            return local_model
+        snapshot = snapshot_download(
+            _FEEDBACK_MODEL_NAME,
+            allow_patterns=allow_patterns,
+            local_dir=_FEEDBACK_MODEL_DIR,
+        )
     return Path(snapshot) / _FEEDBACK_MODEL_SUBDIR
 
 

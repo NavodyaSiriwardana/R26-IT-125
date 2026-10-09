@@ -25,6 +25,9 @@ build/
 dist/
 *.egg-info/
 
+# Downloaded language models
+.models/
+
 *.sqlite3
 chroma.sqlite3
 chroma_db
