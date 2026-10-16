@@ -85,7 +85,7 @@ def _parse_entries(raw_entries: List[Dict[str, Any]]) -> List[DiaryEntryResponse
         try:
             entries.append(DiaryEntryResponse(**raw_entry))
         except (TypeError, ValueError):
-            # A malformed legacy document should not make the entire dashboard fail.
+            
             continue
 
     return entries
@@ -514,9 +514,6 @@ def _build_latest_summary_preview(
     ):
         condition = rag_condition
     else:
-        # Backward compatibility for schema-v2 saved summaries where ``rag``
-        # could contain only a legacy score and the displayed output was stored
-        # under ``verified_rag``.
         condition = additional_data.get("verified_rag", {})
     evaluation = condition.get("evaluation", {}) if isinstance(condition, dict) else {}
     citation_metrics = evaluation.get("citation_metrics", {})
@@ -540,8 +537,7 @@ def _build_latest_summary_preview(
         retrieval.get("retrieval_coverage") if isinstance(retrieval, dict) else None
     )
 
-    # Read an old stored value only for legacy display compatibility. New
-    # summaries never write or derive Evidence Accuracy.
+    
     legacy_rag = additional_data.get("rag", {})
     evidence_accuracy = _optional_metric(legacy_rag.get("evidence_accuracy_normalized"))
 

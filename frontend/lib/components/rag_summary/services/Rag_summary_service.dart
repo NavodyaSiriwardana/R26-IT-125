@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../core/network/dio_client.dart';
 import '../models/Compare_summary_response.dart';
 import '../models/Diary_entry.dart';
@@ -15,10 +17,10 @@ class RagSummaryService {
     String? weekEnd,
     int topK = 8,
     String retrievalMode = 'auto',
-    bool enableSlmFeedback = false,
   }) async {
     final response = await dioClient.dio.post(
       '/api/v1/rag-summary/weekly-summary',
+      options: Options(receiveTimeout: const Duration(minutes: 30)),
       data: {
         'user_id': userId,
         'query': query,
@@ -26,7 +28,6 @@ class RagSummaryService {
         'week_end': weekEnd,
         'top_k': topK,
         'retrieval_mode': retrievalMode,
-        'enable_slm_feedback': enableSlmFeedback,
       },
     );
 
