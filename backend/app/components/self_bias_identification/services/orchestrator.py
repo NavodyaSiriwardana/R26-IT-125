@@ -21,7 +21,9 @@ class BiasDetectionOrchestrator:
 
         # Step 2: Classify
         classification = self.classifier.classify_with_rules(
-            features, facial_emotion=sensor_data.get("facial_emotion"))
+            features,
+            facial_emotion=sensor_data.get("facial_emotion"),
+            mood_after=diary_entry.get("mood_after") or "")
 
         # Step 3: PAS Score
         pas_result = self.pas_calculator.calculate(
@@ -36,5 +38,6 @@ class BiasDetectionOrchestrator:
             "pas_score": pas_result["pas_score"],
             "pas_level": pas_result["level"],
             "pas_breakdown": pas_result["breakdown"],
+            "pas_not_scored": pas_result["not_scored"],
             "comparison": comparison,
         }

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/location_service.dart';
@@ -305,7 +304,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                     'Create a trusted GPS reference',
                     style: TextStyle(
                       color: _textSecondary,
-                      fontSize: 13,
+                      fontSize: 15,
                     ),
                   ),
                 ],
@@ -324,7 +323,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
           gradient: RadialGradient(
             center: const Alignment(-0.6, -1.1),
             radius: 1.3,
-            colors: [_green.withOpacity(0.14), Colors.transparent],
+            colors: [_green.withValues(alpha: 0.14), Colors.transparent],
             stops: const [0.0, 0.58],
           ),
         ),
@@ -512,7 +511,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
           border: Border(
             top: BorderSide(
               color: Colors.white
-                  .withOpacity(0.055),
+                  .withValues(alpha: 0.055),
             ),
           ),
         ),
@@ -528,7 +527,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             borderRadius: BorderRadius.circular(15),
             boxShadow: [
               BoxShadow(
-                color: _green.withOpacity(0.35),
+                color: _green.withValues(alpha: 0.35),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
@@ -549,7 +548,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                   Colors.transparent,
 
               disabledForegroundColor:
-                  _background.withOpacity(
+                  _background.withValues(alpha: 
                 0.6,
               ),
 
@@ -644,7 +643,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.055)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.055)),
       ),
       child: Row(
         children: [
@@ -694,7 +693,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: selected ? _green : _textSecondary,
-              fontSize: 12,
+              fontSize: 14,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
             ),
           ),
@@ -714,7 +713,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: Colors.white.withOpacity(0.055)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.055)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -733,7 +732,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             'Google Maps.',
             style: TextStyle(
               color: _textSecondary,
-              fontSize: 12.5,
+              fontSize: 14,
               height: 1.4,
             ),
           ),
@@ -745,7 +744,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
               onPressed: _pickOnMap,
               style: OutlinedButton.styleFrom(
                 foregroundColor: _cyan,
-                side: BorderSide(color: _cyan.withOpacity(0.4)),
+                side: BorderSide(color: _cyan.withValues(alpha: 0.4)),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(13),
                 ),
@@ -775,7 +774,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
       decoration: BoxDecoration(
         color: _surface2,
         borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: Colors.white.withOpacity(0.055)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.055)),
       ),
       child: TextField(
         controller: controller,
@@ -789,10 +788,10 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
         decoration: InputDecoration(
           border: InputBorder.none,
           labelText: label,
-          labelStyle: const TextStyle(color: _textSecondary, fontSize: 12.5),
-          floatingLabelStyle: const TextStyle(color: _cyan, fontSize: 12.5),
+          labelStyle: const TextStyle(color: _textSecondary, fontSize: 14),
+          floatingLabelStyle: const TextStyle(color: _cyan, fontSize: 14),
           hintText: hint,
-          hintStyle: const TextStyle(color: _textMuted, fontSize: 13),
+          hintStyle: const TextStyle(color: _textMuted, fontSize: 15),
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         ),
       ),
@@ -862,7 +861,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             ),
             border: Border.all(
               color: Colors.white
-                  .withOpacity(0.055),
+                  .withValues(alpha: 0.055),
             ),
           ),
           child: Icon(
@@ -908,11 +907,11 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
         border: Border.all(
           color: captured
-              ? _green.withOpacity(
+              ? _green.withValues(alpha: 
                   0.12,
                 )
               : Colors.white
-                  .withOpacity(
+                  .withValues(alpha: 
                   0.055,
                 ),
         ),
@@ -920,7 +919,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
         boxShadow: [
           BoxShadow(
             color: Colors.black
-                .withOpacity(0.22),
+                .withValues(alpha: 0.22),
             blurRadius: 26,
             offset:
                 const Offset(0, 12),
@@ -970,7 +969,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                   color: captured
                       ? _greenSoft
                       : _orange
-                          .withOpacity(
+                          .withValues(alpha: 
                           0.08,
                         ),
                   borderRadius:
@@ -988,7 +987,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                     color: captured
                         ? _green
                         : _orange,
-                    fontSize: 11.5,
+                    fontSize: 13,
                     fontWeight:
                         FontWeight.w700,
                   ),
@@ -1070,7 +1069,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
       decoration: BoxDecoration(
         color:
-            Colors.white.withOpacity(
+            Colors.white.withValues(alpha: 
           0.025,
         ),
         borderRadius:
@@ -1100,7 +1099,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             title,
             style: const TextStyle(
               color: _textMuted,
-              fontSize: 11.5,
+              fontSize: 13,
             ),
           ),
 
@@ -1155,7 +1154,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             number,
             style: const TextStyle(
               color: _green,
-              fontSize: 12,
+              fontSize: 14,
               fontWeight:
                   FontWeight.w800,
             ),
@@ -1192,7 +1191,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                     const TextStyle(
                   color:
                       _textSecondary,
-                  fontSize: 12.5,
+                  fontSize: 14,
                   height: 1.4,
                 ),
               ),
@@ -1216,7 +1215,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
         border: Border.all(
           color:
-              Colors.white.withOpacity(
+              Colors.white.withValues(alpha: 
             0.055,
           ),
         ),
@@ -1247,13 +1246,13 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
           labelStyle: TextStyle(
             color: _textSecondary,
-            fontSize: 13,
+            fontSize: 15,
           ),
 
           floatingLabelStyle:
               TextStyle(
             color: _cyan,
-            fontSize: 13,
+            fontSize: 15,
           ),
 
           hintText:
@@ -1261,7 +1260,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
           hintStyle: TextStyle(
             color: _textMuted,
-            fontSize: 13,
+            fontSize: 15,
           ),
 
           contentPadding:
@@ -1293,7 +1292,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
         border: Border.all(
           color:
-              Colors.white.withOpacity(
+              Colors.white.withValues(alpha: 
             0.055,
           ),
         ),
@@ -1319,7 +1318,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             'Location accuracy may vary when you are indoors.',
             style: TextStyle(
               color: _textSecondary,
-              fontSize: 12.5,
+              fontSize: 14,
               height: 1.4,
             ),
           ),
@@ -1425,7 +1424,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
         border: Border.all(
           color:
-              _green.withOpacity(
+              _green.withValues(alpha: 
             0.10,
           ),
         ),
@@ -1462,8 +1461,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                       style: TextStyle(
                         color:
                             _textSecondary,
-                        fontSize:
-                            12,
+                        fontSize: 14,
                       ),
                     ),
                   ],
@@ -1493,7 +1491,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                   'READY',
                   style: TextStyle(
                     color: _green,
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight:
                         FontWeight
                             .w800,
@@ -1553,7 +1551,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             decoration:
                 BoxDecoration(
               color: Colors.white
-                  .withOpacity(
+                  .withValues(alpha: 
                 0.025,
               ),
               borderRadius:
@@ -1570,7 +1568,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                   style: TextStyle(
                     color:
                         _textSecondary,
-                    fontSize: 12,
+                    fontSize: 14,
                   ),
                 ),
 
@@ -1584,7 +1582,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                       position
                           .accuracy,
                     ),
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight:
                         FontWeight
                             .w700,
@@ -1626,7 +1624,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             style:
                 const TextStyle(
               color: _textMuted,
-              fontSize: 11,
+              fontSize: 13,
             ),
           ),
 
@@ -1685,7 +1683,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
         border: Border.all(
           color:
-              Colors.white.withOpacity(
+              Colors.white.withValues(alpha: 
             0.055,
           ),
         ),
@@ -1722,8 +1720,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                       style: TextStyle(
                         color:
                             _textSecondary,
-                        fontSize:
-                            12.5,
+                        fontSize: 14,
                       ),
                     ),
                   ],
@@ -1783,7 +1780,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
               thumbColor: _green,
 
               overlayColor:
-                  _green.withOpacity(
+                  _green.withValues(alpha: 
                 0.12,
               ),
 
@@ -1845,7 +1842,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                   style: TextStyle(
                     color:
                         _textMuted,
-                    fontSize: 11,
+                    fontSize: 13,
                   ),
                 ),
 
@@ -1854,7 +1851,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                   style: TextStyle(
                     color:
                         _textMuted,
-                    fontSize: 11,
+                    fontSize: 13,
                   ),
                 ),
               ],
@@ -1879,7 +1876,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
             decoration:
                 BoxDecoration(
               color: _cyanSoft
-                  .withOpacity(
+                  .withValues(alpha: 
                 0.48,
               ),
 
@@ -1896,7 +1893,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
                   const TextStyle(
                 color:
                     _textSecondary,
-                fontSize: 12,
+                fontSize: 14,
                 height: 1.45,
               ),
             ),
@@ -1933,19 +1930,16 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
       decoration: BoxDecoration(
         color:
-            _cyanSoft.withOpacity(
+            _cyanSoft.withValues(alpha: 
           0.52,
         ),
 
         borderRadius:
             BorderRadius.circular(16),
 
-        border: Border(
-          left: BorderSide(
-            color: _cyan
-                .withOpacity(0.65),
-            width: 3,
-          ),
+        // Uniform border: a rounded box cannot have only one coloured side.
+        border: Border.all(
+          color: _cyan.withValues(alpha: 0.45),
         ),
       ),
 
@@ -1954,7 +1948,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
         'For homes or outdoor locations, 30–50 m is usually enough.',
         style: TextStyle(
           color: _textSecondary,
-          fontSize: 12.5,
+          fontSize: 14,
           height: 1.5,
         ),
       ),
@@ -1974,18 +1968,13 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
 
       decoration: BoxDecoration(
         color:
-            _red.withOpacity(0.07),
+            _red.withValues(alpha: 0.07),
 
         borderRadius:
             BorderRadius.circular(15),
 
-        border: Border(
-          left: BorderSide(
-            color: _red.withOpacity(
-              0.8,
-            ),
-            width: 3,
-          ),
+        border: Border.all(
+          color: _red.withValues(alpha: 0.6),
         ),
       ),
 
@@ -1993,7 +1982,7 @@ class _AddLocationScreenState extends State<AddLocationScreen> {
         _error!,
         style: const TextStyle(
           color: Color(0xFFFFA5AD),
-          fontSize: 12.5,
+          fontSize: 14,
           height: 1.45,
         ),
       ),

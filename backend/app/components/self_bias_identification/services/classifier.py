@@ -53,26 +53,33 @@ class BiasClassifier:
         )
         print("Bias classifier loaded!")
 
-    def classify(self, features: dict) -> dict:
+    def classify(self, features: dict, exclude=()) -> dict:
+        """The model's verdict. [exclude] lists bias types that must not be
+        chosen (see classify_with_rules); the best of the rest is used instead
+        and the confidence is re-scaled over what is left, so it still reads
+        as "how sure among the possible answers"."""
         feature_vector = np.array([[
             features[name] for name in FEATURE_ORDER
         ]])
 
         scaled = self.scaler.transform(feature_vector)
-        prediction = self.model.predict(scaled)[0]
-        probabilities = self.model.predict_proba(scaled)[0]
-        bias_type = self.label_encoder.inverse_transform(
-            [prediction]
-        )[0]
-        confidence = float(max(probabilities))
+        probabilities = self.model.predict_proba(scaled)[0].copy()
+        classes = list(self.label_encoder.classes_)
 
         all_probs = {
-            self.label_encoder.classes_[i]: round(float(p), 4)
+            classes[i]: round(float(p), 4)
             for i, p in enumerate(probabilities)
         }
 
+        allowed = [i for i, name in enumerate(classes) if name not in exclude]
+        if not allowed:
+            allowed = list(range(len(classes)))
+        prediction = max(allowed, key=lambda i: probabilities[i])
+        mass = float(sum(probabilities[i] for i in allowed)) or 1.0
+        confidence = float(probabilities[prediction]) / mass
+
         return {
-            "bias_type": bias_type,
+            "bias_type": classes[prediction],
             "confidence": round(confidence, 4),
             "all_probabilities": all_probs,
             "explanation": self._explain(scaled, int(prediction)),
@@ -104,27 +111,42 @@ class BiasClassifier:
         ]
 
     def classify_with_rules(self, features: dict,
-                             facial_emotion: dict = None) -> dict:
+                             facial_emotion: dict = None,
+                             mood_after: str = "") -> dict:
         # Step 1: XGBoost primary
         primary = self.classify(features)
 
-        # Step 2: Rule-based additional
+        # The model learned "a stressed face means stress underestimation"
+        # because in its training data a stressed face always came with a
+        # mismatch. In the app a student who says "I feel stressed, tired or
+        # bored" is being honest, and the comparator then sets
+        # stress_mismatch to 0. That student must not be told they
+        # underestimate their stress, so the next best answer is used instead.
+        if (primary["bias_type"] == "stress_underestimation"
+                and features.get("stress_mismatch", 0) == 0):
+            primary = self.classify(features, exclude=("stress_underestimation",))
+            primary["adjusted"] = (
+                "Stress underestimation was ruled out: no stress was hidden "
+                "(the student's own report matches, or there was no scan)."
+            )
+
+        # Step 2: Rule-based additional indicators. Each rule fires only when
+        # its signal was actually verified (see comparator *_checked flags),
+        # so "could not check" is never reported as a mismatch.
         additional = []
 
-        # facial_stress already feeds the primary XGBoost classification
-        # (see comparator.py / FEATURE_ORDER above). This is a *separate*,
-        # rule-based cross-check: it only fires when the self-report alone
-        # didn't already flag a mismatch, so it doesn't duplicate what the
-        # model already caught.
-        if (facial_emotion and facial_emotion.get("status") == "success" and
-                facial_emotion.get("stress_indicator", 0) >= 0.5 and
-                features["stress_mismatch"] == 0):
+        # stress_mismatch is already 1 only when the face shows stress the
+        # student's own mood report does not (comparator.py), so an honest
+        # "I feel stressed" never triggers this.
+        if (features["stress_mismatch"] == 1 and facial_emotion
+                and facial_emotion.get("status") == "success"):
+            pct = round(facial_emotion.get("stress_indicator", 0) * 100)
+            reported = f" while you reported feeling {mood_after}" if mood_after else ""
             additional.append({
                 "type": "facial_stress_mismatch",
                 "reason": (
                     f"Facial expression suggests {facial_emotion.get('dominant_emotion')} "
-                    f"({round(facial_emotion.get('stress_indicator', 0) * 100)}% stress signal) "
-                    "not reflected in your self-reported mood"
+                    f"({pct}% stress signal){reported}"
                 )
             })
 
@@ -135,24 +157,19 @@ class BiasClassifier:
                 "reason": f"High app switches detected: {features['app_switch_count']}"
             })
 
-        if (features["location_match"] == 0 and
+        if (features.get("location_checked", True) and
+                features["location_match"] == 0 and
                 primary["bias_type"] != "context_mismatch"):
             additional.append({
                 "type": "context_mismatch",
                 "reason": "Location does not match claim"
             })
 
-        if features["calendar_match"] == 0:
+        if (features.get("calendar_checked", True) and
+                features["calendar_match"] == 0):
             additional.append({
                 "type": "schedule_mismatch",
                 "reason": "No calendar event scheduled"
-            })
-
-        if (features["stress_mismatch"] == 1 and
-                primary["bias_type"] != "stress_underestimation"):
-            additional.append({
-                "type": "stress_underestimation",
-                "reason": "Mood claim contradicts behavior signals"
             })
 
         return {

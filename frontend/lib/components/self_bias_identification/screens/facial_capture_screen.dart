@@ -1,15 +1,20 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:frontend/components/self_bias_identification/widgets/scan_continue_button.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
+import 'package:frontend/components/self_bias_identification/screens/webcam_capture_screen.dart';
 import 'package:frontend/app_state.dart';
 import 'package:frontend/components/self_bias_identification/screens/analyzing_screen.dart';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
 import 'package:frontend/components/self_bias_identification/widgets/gradient_ring_painter.dart';
-import 'package:frontend/components/self_bias_identification/widgets/tilt_card.dart';
+import 'package:frontend/components/self_bias_identification/widgets/mood_heatmap.dart';
+import 'package:frontend/components/self_bias_identification/services/history_data.dart';
+import 'package:frontend/components/self_bias_identification/services/mood_heatmap.dart';
+import 'package:frontend/components/self_bias_identification/services/entry_time.dart';
+import 'package:frontend/components/self_bias_identification/widgets/app_toast.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
 
 class FacialCaptureScreen extends StatefulWidget {
   const FacialCaptureScreen({super.key});
@@ -20,12 +25,13 @@ class FacialCaptureScreen extends StatefulWidget {
 
 class _FacialCaptureScreenState extends State<FacialCaptureScreen>
     with SingleTickerProviderStateMixin {
-  File? _imageFile;
+  Uint8List? _imageBytes;
   bool _isAnalyzing = false;
   Map<String, dynamic>? _result;
   String? _errorMessage;
   bool _facialTabSelected = true;
   List<Map<String, dynamic>> _history = [];
+  List<HistoryEntry> _heatEntries = [];
 
   late AnimationController _scanController;
   late Animation<double> _scanAnimation;
@@ -34,13 +40,13 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
   static const greenBright = Color(0xFF4ADE80);
   static const cyan = Color(0xFF22D3EE);
   static const amber = Color(0xFFFFCB6B);
-  static const deepOrange = Color(0xFFFF7043);
   static const cardBg = Color(0xFF0A1710);
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
+    _loadHeat();
 
     _scanController = AnimationController(
       vsync: this,
@@ -57,7 +63,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
 
   Future<void> _loadHistory() async {
     try {
-      final response = await http.get(
+      final response = await ApiClient.get(
         Uri.parse('${ApiService.baseUrl}/api/bias/history/${AppState.userId}'),
       );
       if (response.statusCode == 200) {
@@ -69,8 +75,8 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
         history.sort((a, b) {
           final aId = a['entry_id']?.toString() ?? '';
           final bId = b['entry_id']?.toString() ?? '';
-          final aTime = int.tryParse(aId.replaceAll('ENT_', '')) ?? 0;
-          final bTime = int.tryParse(bId.replaceAll('ENT_', '')) ?? 0;
+          final aTime = entryTimestampMs(aId) ?? 0;
+          final bTime = entryTimestampMs(bId) ?? 0;
           return bTime.compareTo(aTime);
         });
 
@@ -84,41 +90,28 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
   }
 
   Future<void> _captureImage() async {
-    try {
-      final picker = ImagePicker();
-      final XFile? photo = await picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
-        imageQuality: 80,
-      );
-      if (photo == null) return;
+    final bytes = await captureFromWebcam(context);
+    if (bytes == null || !mounted) return;
 
-      setState(() {
-        _imageFile = File(photo.path);
-        _isAnalyzing = true;
-        _errorMessage = null;
-        _result = null;
-      });
+    setState(() {
+      _imageBytes = bytes;
+      _isAnalyzing = true;
+      _errorMessage = null;
+      _result = null;
+    });
 
-      _scanController.repeat();
-      await _analyzeExpression();
-      _scanController.stop();
-      _scanController.reset();
-    } catch (e) {
-      setState(() {
-        _errorMessage =
-            'Could not access the camera. Please check camera permissions in your device settings.';
-        _isAnalyzing = false;
-      });
-    }
+    _scanController.repeat();
+    await _analyzeExpression();
+    _scanController.stop();
+    _scanController.reset();
   }
 
   Future<void> _analyzeExpression() async {
     try {
-      final bytes = await _imageFile!.readAsBytes();
+      final bytes = _imageBytes!;
       final base64Image = base64Encode(bytes);
 
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiService.baseUrl}/api/bias/facial/analyze'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'image_base64': base64Image}),
@@ -131,13 +124,14 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
         });
       } else {
         setState(() {
-          _errorMessage = 'Server error: ${response.statusCode}';
+          _errorMessage =
+              'The server had a problem (code ${response.statusCode}). Please try again.';
           _isAnalyzing = false;
         });
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Connection error: $e';
+        _errorMessage = AppToast.friendlyError(e);
         _isAnalyzing = false;
       });
     }
@@ -153,6 +147,10 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
   }
 
   void _skipCapture() {
+    AppToast.info(
+      context,
+      'Skipped the camera. The result uses your reported mood.',
+    );
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const AnalyzingScreen()),
@@ -193,21 +191,30 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
         _result != null && _result!['status'] == 'partial_face';
     final bool isBlurryImage =
         _result != null && _result!['status'] == 'blurry_image';
-    final bool showWarning = isNoFace || isPartialFace || isBlurryImage;
+    final bool isLowLight =
+        _result != null && _result!['status'] == 'low_light';
+    final bool showWarning =
+        isNoFace || isPartialFace || isBlurryImage || isLowLight;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E14),
+      // Once a scan is good, Continue stays on screen on both tabs, instead of
+      // sitting at the bottom of a long page where it was easy to miss.
+      bottomNavigationBar: isSuccess
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: _buildContinueButton(),
+              ),
+            )
+          : null,
       body: Stack(
         children: [
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0, -1.2),
-                    radius: 1.1,
-                    colors: [green.withValues(alpha: 0.16), Colors.transparent],
-                  ),
+                  
                 ),
               ),
             ),
@@ -232,7 +239,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
                   const Text(
                     'MediaPipe landmark check + Vision Transformer emotion model',
                     style: TextStyle(
-                        fontSize: 12, color: Colors.white38, height: 1.4),
+                        fontSize: 14, color: Colors.white38, height: 1.4),
                   ),
                   const SizedBox(height: 24),
 
@@ -241,7 +248,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
 
                   _facialTabSelected ? _buildCameraCard() : _buildDiaryMoodCard(),
 
-                  if (_facialTabSelected) ...[
+                  if (_facialTabSelected && !isSuccess) ...[
                     const SizedBox(height: 28),
                     _buildCaptureButton(),
                   ],
@@ -252,7 +259,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
                       child: Text(
                         'Analyzing expression...',
                         style: GoogleFonts.outfit(
-                            color: Colors.white54, fontSize: 12),
+                            color: Colors.white54, fontSize: 14),
                       ),
                     ),
                   ],
@@ -276,17 +283,25 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
                   ],
 
                   if (isSuccess && _facialTabSelected) ...[
-                    const SizedBox(height: 24),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildStressCard()),
-                        const SizedBox(width: 12),
-                        Expanded(child: _buildMoodHeatmapCard()),
-                      ],
+                    const SizedBox(height: 18),
+                    _buildStressCard(),
+                    const SizedBox(height: 14),
+                    _buildExpressionCard(),
+                    const SizedBox(height: 14),
+                    MoodHeatmapCard(heatmap: _heatmap),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: _isAnalyzing ? null : _captureImage,
+                        icon: const Icon(Icons.refresh_rounded,
+                            size: 18, color: Colors.white54),
+                        label: Text(
+                          'Retake photo',
+                          style: GoogleFonts.outfit(
+                              fontSize: 14, color: Colors.white54),
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 24),
-                    _buildContinueButton(),
                   ] else if (_facialTabSelected) ...[
                     const SizedBox(height: 16),
                     Center(
@@ -367,20 +382,14 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
               decoration: BoxDecoration(
                 color: color,
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: color.withValues(alpha: 0.6),
-                    blurRadius: 8,
-                    spreadRadius: 2,
-                  ),
-                ],
+                
               ),
             ),
           const SizedBox(width: 6),
           Text(
             label,
             style: GoogleFonts.outfit(
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
               color: color,
               letterSpacing: 0.6,
@@ -423,14 +432,14 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
       duration: const Duration(milliseconds: 200),
       padding: const EdgeInsets.symmetric(vertical: 9),
       decoration: BoxDecoration(
-        gradient: selected ? const LinearGradient(colors: [green, cyan]) : null,
+        color: selected ? green : null,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Center(
         child: Text(
           label,
           style: GoogleFonts.outfit(
-            fontSize: 12,
+            fontSize: 14,
             fontWeight: FontWeight.w600,
             color: selected ? const Color(0xFF04342C) : Colors.white54,
           ),
@@ -446,14 +455,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.white.withValues(alpha: 0.06),
-            Colors.white.withValues(alpha: 0.015),
-          ],
-        ),
+        color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
@@ -464,7 +466,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
   Widget _cardLabel(String text) => Text(
         text,
         style: GoogleFonts.outfit(
-          fontSize: 10,
+          fontSize: 12,
           fontWeight: FontWeight.w600,
           color: Colors.white.withValues(alpha: 0.4),
           letterSpacing: 1,
@@ -488,7 +490,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
           Icon(icon, color: color, size: 20),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text, style: TextStyle(color: color, fontSize: 13)),
+            child: Text(text, style: TextStyle(color: color, fontSize: 15)),
           ),
         ],
       ),
@@ -499,93 +501,109 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
   // Facial scan tab
   // ---------------------------------------------------------------------
 
+  Widget _mirrored(Widget photo) => Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.diagonal3Values(-1, 1, 1),
+        child: photo,
+      );
+
   Widget _buildCameraCard() {
-    final hasImage = _imageFile != null;
+    final hasImage = _imageBytes != null;
+    final success = _result != null && _result!['status'] == 'success';
     final croppedFace = _result != null && _result!['cropped_face_base64'] != null
         ? base64Decode(_result!['cropped_face_base64'])
         : null;
+    final badge = _isAnalyzing
+        ? 'Scanning...'
+        : success
+            ? 'Scan complete'
+            : hasImage
+                ? 'Photo captured'
+                : 'Align your face in the frame';
+    final ringColor = _isAnalyzing ? cyan : green;
+    const stageHeight = 276.0;
 
-    return Center(
-      child: Column(
+    return Column(
       children: [
         Container(
-          width: 260,
-          height: 260,
+          width: double.infinity,
+          height: stageHeight,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: green.withValues(alpha: 0.18),
-                blurRadius: 60,
-                spreadRadius: 6,
-              ),
-            ],
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (_isAnalyzing)
-                AnimatedBuilder(
-                  animation: _scanAnimation,
-                  builder: (context, child) => Transform.rotate(
-                    angle: _scanAnimation.value * 2 * math.pi,
-                    child: child,
-                  ),
-                  child: CustomPaint(
-                    size: const Size(260, 260),
-                    painter: const GradientRingPainter(
-                      progress: 0.22,
-                      colors: [green, cyan],
-                      strokeWidth: 3,
-                      glowDot: true,
-                    ),
-                  ),
-                )
-              else
-                CustomPaint(
-                  size: const Size(260, 260),
-                  painter: const GradientRingPainter(
-                    progress: 1.0,
-                    colors: [green, cyan],
-                    strokeWidth: 3,
-                  ),
-                ),
-              ClipOval(
-                child: SizedBox(
-                  width: 224,
-                  height: 224,
-                  child: croppedFace != null
-                      ? Image.memory(croppedFace, fit: BoxFit.cover)
-                      : hasImage
-                          ? Image.file(_imageFile!, fit: BoxFit.cover)
-                          : Container(
-                              color: cardBg,
-                              child: Icon(
-                                Icons.face_outlined,
-                                size: 64,
-                                color: Colors.white.withValues(alpha: 0.15),
-                              ),
-                            ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(20),
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(22),
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
-          child: Text(
-            _isAnalyzing
-                ? 'Scanning facial features...'
-                : hasImage
-                    ? 'Face captured — ready to analyze'
-                    : 'Align face within the frame',
-            style: const TextStyle(fontSize: 12, color: Colors.white70),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const Positioned.fill(
+                  child: CustomPaint(painter: _BracketPainter(color: cyan)),
+                ),
+                Container(
+                  width: 170,
+                  height: 170,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ringColor, width: 3),
+                  ),
+                  child: ClipOval(
+                    // Shown mirrored, like the preview was. This is display
+                    // only: the photo that is analysed is the true one.
+                    child: croppedFace != null
+                        ? _mirrored(Image.memory(croppedFace, fit: BoxFit.cover))
+                        : hasImage
+                            ? _mirrored(
+                                Image.memory(_imageBytes!, fit: BoxFit.cover))
+                            : Container(
+                                color: cardBg,
+                                child: Icon(
+                                  Icons.face_outlined,
+                                  size: 56,
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                ),
+                              ),
+                  ),
+                ),
+                if (_isAnalyzing)
+                  AnimatedBuilder(
+                    animation: _scanAnimation,
+                    builder: (context, _) {
+                      // Up and down, not a jump back to the top.
+                      final t =
+                          (math.sin(_scanAnimation.value * 2 * math.pi - math.pi / 2) + 1) / 2;
+                      return Positioned(
+                        left: 30,
+                        right: 30,
+                        top: 36 + t * (stageHeight - 72),
+                        child: Container(height: 2, color: cyan),
+                      );
+                    },
+                  ),
+                Positioned(
+                  bottom: 12,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: _isAnalyzing ? cyan : (success ? green : const Color(0xFF1B2430)),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      badge,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: (_isAnalyzing || success)
+                            ? const Color(0xFF06231A)
+                            : Colors.white70,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         if (_result != null) ...[
@@ -593,31 +611,48 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
           _buildDiagnosticChips(),
         ],
       ],
-      ),
     );
   }
 
   Widget _buildDiagnosticChips() {
     final isNoFace = _result!['status'] == 'no_face_detected';
     final isBlurry = _result!['status'] == 'blurry_image';
+    final isLowLight = _result!['status'] == 'low_light';
     final isPartial = _result!['status'] == 'partial_face';
+    // Blur and low-light checks run before face detection, so no face
+    // verdict exists for those results.
+    final faceChecked = !(isBlurry || isLowLight);
 
     final faceChip = isNoFace
         ? _diagnosticChip(Icons.close, 'No face detected', Colors.redAccent)
         : _diagnosticChip(Icons.check, 'Face detected', green);
 
-    final qualityChip = isBlurry
+    final qualityChip = isLowLight
+        ? _diagnosticChip(Icons.close, 'Too dark', Colors.orangeAccent)
+        : isBlurry
         ? _diagnosticChip(Icons.close, 'Image blurry', Colors.orangeAccent)
         : isPartial
             ? _diagnosticChip(
                 Icons.close, 'Face partially visible', Colors.orangeAccent)
             : _diagnosticChip(Icons.check, 'Image quality good', green);
 
+    final confidenceChip = _result!['status'] == 'success'
+        ? _diagnosticChip(
+            Icons.verified_outlined,
+            'Confidence ${(((_result!['confidence'] ?? 0) as num) * 100).round()}%',
+            cyan,
+          )
+        : null;
+
     return Wrap(
       alignment: WrapAlignment.center,
       spacing: 10,
       runSpacing: 8,
-      children: [faceChip, if (!isNoFace) qualityChip],
+      children: [
+        if (faceChecked) faceChip,
+        if (!isNoFace) qualityChip,
+        ?confidenceChip,
+      ],
     );
   }
 
@@ -625,14 +660,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.white.withValues(alpha: 0.06),
-            Colors.white.withValues(alpha: 0.02),
-          ],
-        ),
+        color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
@@ -643,7 +671,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.75)),
+            style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.75)),
           ),
         ],
       ),
@@ -683,14 +711,8 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
                     height: 60,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: const LinearGradient(colors: [green, cyan]),
-                      boxShadow: [
-                        BoxShadow(
-                          color: green.withValues(alpha: 0.35),
-                          blurRadius: 24,
-                          spreadRadius: 4,
-                        ),
-                      ],
+                      color: green,
+                      
                     ),
                     child: _isAnalyzing
                         ? const Padding(
@@ -712,9 +734,9 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
           ),
           const SizedBox(height: 10),
           Text(
-            _imageFile == null ? 'Tap to capture' : 'Retake photo',
+            _imageBytes == null ? 'Tap to capture' : 'Retake photo',
             style: GoogleFonts.outfit(
-              fontSize: 13,
+              fontSize: 15,
               fontWeight: FontWeight.w600,
               color: Colors.white,
             ),
@@ -725,76 +747,260 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
   }
 
   Widget _buildStressCard() {
-    final double stress = (_result!['stress_indicator'] ?? 0).toDouble().clamp(
-      0,
-      1,
-    );
-    final label = stress > 0.6
-        ? 'High'
-        : stress > 0.3
-        ? 'Moderate'
-        : 'Low';
-    final gradientColors = stress > 0.6
-        ? const [Colors.redAccent, deepOrange]
-        : stress > 0.3
-            ? const [amber, deepOrange]
-            : const [green, greenBright];
-    final labelColor = stress > 0.6
+    final double stress =
+        ((_result!['stress_indicator'] ?? 0) as num).toDouble().clamp(0.0, 1.0);
+    final band = stressBand(stress);
+    final color = band == StressBand.high
         ? Colors.redAccent
-        : stress > 0.3
-        ? Colors.orangeAccent
-        : greenBright;
+        : band == StressBand.moderate
+            ? amber
+            : green;
+    final word = band == StressBand.high
+        ? 'High · stressed'
+        : band == StressBand.moderate
+            ? 'Moderate · uneasy'
+            : 'Low · calm';
 
-    return TiltCard(
-      borderRadius: BorderRadius.circular(16),
-      child: _glassCard(
+    return _glassCard(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _cardLabel('STRESS LEVEL'),
-          const SizedBox(height: 14),
-          Center(
-            child: SizedBox(
-              width: 84,
-              height: 84,
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '${(stress * 100).round()}%',
+                style: GoogleFonts.outfit(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                word,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(builder: (context, c) {
+            const markerW = 4.0;
+            return SizedBox(
+              height: 18,
               child: Stack(
-                alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: [
-                  CustomPaint(
-                    size: const Size(84, 84),
-                    painter: GradientRingPainter(
-                      progress: stress,
-                      colors: gradientColors,
-                      strokeWidth: 8,
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 4,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: Row(
+                        children: [
+                          Expanded(child: Container(height: 10, color: green)),
+                          Expanded(child: Container(height: 10, color: amber)),
+                          Expanded(
+                              child: Container(height: 10, color: Colors.redAccent)),
+                        ],
+                      ),
                     ),
                   ),
-                  Text(
-                    '${(stress * 100).round()}%',
-                    style: GoogleFonts.outfit(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: labelColor,
+                  Positioned(
+                    left: (c.maxWidth - markerW) * stress,
+                    top: 0,
+                    child: Container(
+                      width: markerW,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
                     ),
                   ),
                 ],
               ),
-            ),
+            );
+          }),
+          const SizedBox(height: 6),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Low', style: TextStyle(fontSize: 10, color: Colors.white38)),
+              Text('Moderate', style: TextStyle(fontSize: 10, color: Colors.white38)),
+              Text('High', style: TextStyle(fontSize: 10, color: Colors.white38)),
+            ],
           ),
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: labelColor,
+        ],
+      ),
+    );
+  }
+
+  String _cap(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+  Widget _buildExpressionCard() {
+    final scores = Map<String, dynamic>.from(_result!['emotion_scores'] ?? {});
+    final sorted = scores.entries.toList()
+      ..sort((a, b) => (b.value as num).compareTo(a.value as num));
+    final top = sorted.take(3).toList();
+    if (top.isEmpty) return const SizedBox.shrink();
+    final topSum =
+        top.fold<double>(0, (s, e) => s + (e.value as num).toDouble());
+    final other = (1 - topSum).clamp(0.0, 1.0);
+    const colors = [cyan, green, amber];
+    final values = [
+      for (final e in top) (e.value as num).toDouble(),
+      if (other > 0.005) other,
+    ];
+    final paints = [...colors.take(top.length), if (other > 0.005) const Color(0xFF3A4452)];
+    final stress =
+        ((_result!['stress_indicator'] ?? 0) as num).toDouble().clamp(0.0, 1.0);
+    final dominant = _cap(top.first.key);
+
+    return _glassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _cardLabel('EXPRESSION'),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              SizedBox(
+                width: 112,
+                height: 112,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CustomPaint(
+                      size: const Size(112, 112),
+                      painter: _DonutPainter(values: values, colors: paints),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          dominant,
+                          style: GoogleFonts.outfit(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const Text('dominant',
+                            style: TextStyle(fontSize: 10, color: Colors.white38)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  children: [
+                    for (var i = 0; i < top.length; i++)
+                      _legendRow(
+                        paints[i],
+                        _cap(top[i].key),
+                        (top[i].value as num).toDouble(),
+                      ),
+                    if (other > 0.005)
+                      _legendRow(paints.last, 'Other', other),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              stress >= 0.3
+                  ? 'Reading: signs of ${stress >= 0.5 ? 'strong' : 'some'} stress in the face (sad, angry, fear or disgust).'
+                  : 'Reading: mostly ${top.first.key.toLowerCase()} face with no strong stress signal.',
+              style: const TextStyle(fontSize: 12, color: Colors.white60, height: 1.4),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _legendRow(Color color, String label, double value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(fontSize: 13, color: Colors.white70)),
+          ),
+          Text(
+            '${(value * 100).round()}%',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  /// The scan result's lasting history: a 4 week calendar of daily stress.
+  /// Today's cell already includes the scan that was just taken.
+  MoodHeatmap get _heatmap {
+    final entries = List<HistoryEntry>.of(_heatEntries);
+    if (_result != null && _result!['status'] == 'success') {
+      entries.add(HistoryEntry.fromJson({
+        'entry_id': 'LIVE',
+        'created_at': DateTime.now().toIso8601String(),
+        'comparison': {'facial_emotion': _result},
+      }));
+    }
+    return buildMoodHeatmap(entries, DateTime.now());
+  }
+
+  Future<void> _loadHeat() async {
+    try {
+      final results = await Future.wait([
+        ApiService.fetchHistory(AppState.userId, limit: 120),
+        ApiService.fetchFaceChecks(AppState.userId, limit: 120),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _heatEntries = [
+          for (final list in results)
+            for (final json in list) HistoryEntry.fromJson(json),
+        ];
+      });
+    } catch (_) {
+      // the heatmap is optional here, so a failed load just leaves it empty
+    }
   }
 
   Color _pasColor(num pas) {
@@ -803,84 +1009,8 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
     return Colors.redAccent;
   }
 
-  Widget _buildMoodHeatmapCard() {
-    return TiltCard(
-      borderRadius: BorderRadius.circular(16),
-      child: _glassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _cardLabel('MOOD HEATMAP'),
-          const SizedBox(height: 12),
-          if (_history.isEmpty)
-            const Text(
-              'No entries yet',
-              style: TextStyle(fontSize: 11, color: Colors.white38),
-            )
-          else
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _history.map((e) {
-                final pas = (e['pas_score'] ?? 0) as num;
-                final color = _pasColor(pas);
-                return Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [color.withValues(alpha: 0.85), color],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          const SizedBox(height: 10),
-          const Text(
-            '● low  ● moderate  ● good',
-            style: TextStyle(fontSize: 9, color: Colors.white38),
-          ),
-        ],
-      ),
-      ),
-    );
-  }
-
-  Widget _buildContinueButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: GestureDetector(
-        onTap: _continueToForm,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 17),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: const LinearGradient(colors: [green, cyan]),
-            boxShadow: [
-              BoxShadow(
-                color: green.withValues(alpha: 0.3),
-                blurRadius: 24,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              'Continue to diary entry',
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF04342C),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildContinueButton() =>
+      ScanContinueButton(onTap: _continueToForm, color: green);
 
   // ---------------------------------------------------------------------
   // Diary mood tab
@@ -894,25 +1024,28 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
           child: Text(
             'Capture a facial scan first to see your mood summary.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white38, fontSize: 13),
+            style: TextStyle(color: Colors.white38, fontSize: 15),
           ),
         ),
       );
     }
 
     final mood = _deriveMoodResult();
-    final confidence = (_result!['confidence'] ?? 0).toDouble();
-    final stress = (_result!['stress_indicator'] ?? 0).toDouble().clamp(0, 1);
-    final stressColor = stress > 0.5
+    final double confidence =
+        ((_result!['confidence'] ?? 0) as num).toDouble().clamp(0.0, 1.0);
+    final double stress =
+        ((_result!['stress_indicator'] ?? 0) as num).toDouble().clamp(0.0, 1.0);
+    final moodColor = stress > 0.5
         ? Colors.redAccent
         : stress > 0.3
-        ? Colors.orangeAccent
-        : greenBright;
+        ? amber
+        : green;
     final stressLabel = stress > 0.5
         ? 'High'
         : stress > 0.3
         ? 'Moderate'
         : 'Low';
+    final reliable = mood['reliable'] == true;
 
     final scores = Map<String, dynamic>.from(_result!['emotion_scores'] ?? {});
     final topEmotions = scores.entries.toList()
@@ -920,28 +1053,27 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
 
     return Column(
       children: [
+        // Hero: the mood, how sure the scan is, and where it sits between
+        // stressed and calm.
         _glassCard(
-          padding: const EdgeInsets.all(26),
+          padding: const EdgeInsets.fromLTRB(18, 24, 18, 20),
           child: Column(
             children: [
               SizedBox(
-                width: 96,
-                height: 96,
+                width: 108,
+                height: 108,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     CustomPaint(
-                      size: const Size(96, 96),
+                      size: const Size(108, 108),
                       painter: GradientRingPainter(
-                        progress: confidence.clamp(0, 1),
-                        colors: [
-                          stressColor.withValues(alpha: 0.7),
-                          stressColor,
-                        ],
-                        strokeWidth: 7,
+                        progress: confidence,
+                        colors: [moodColor, moodColor],
+                        strokeWidth: 9,
                       ),
                     ),
-                    Text(mood['emoji'], style: const TextStyle(fontSize: 30)),
+                    Text(mood['emoji'], style: const TextStyle(fontSize: 40)),
                   ],
                 ),
               ),
@@ -949,119 +1081,127 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
               Text(
                 mood['label'],
                 style: GoogleFonts.outfit(
-                  fontSize: 21,
+                  fontSize: 22,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: 4),
               Text(
-                mood['reliable']
+                reliable
                     ? 'Detected with ${(confidence * 100).round()}% confidence'
                     : 'Facial signal was ambiguous — try a clearer expression',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 12,
-                  color: mood['reliable']
-                      ? Colors.white38
-                      : Colors.orangeAccent,
+                  fontSize: 13,
+                  color: reliable ? Colors.white38 : amber,
                 ),
               ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  _moodPill(
+                    reliable ? 'Reliable scan' : 'Unclear scan',
+                    reliable ? green : amber,
+                    reliable ? Icons.check_rounded : Icons.help_outline_rounded,
+                  ),
+                  _moodPill(
+                    'Stress ${(stress * 100).round()}% · $stressLabel',
+                    moodColor,
+                    null,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              _calmSpectrum(1 - stress),
             ],
           ),
         ),
         const SizedBox(height: 14),
 
-        _glassCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _cardLabel('EMOTION BREAKDOWN'),
-              const SizedBox(height: 12),
-              ...topEmotions.take(3).map((e) {
-                final value = (e.value as num).toDouble();
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            e.key,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.white70,
-                            ),
-                          ),
-                          Text(
-                            '${(value * 100).round()}%',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.white38,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: value,
-                          minHeight: 5,
-                          backgroundColor: Colors.white.withValues(alpha: 0.1),
-                          valueColor: const AlwaysStoppedAnimation(green),
+        if (topEmotions.isNotEmpty)
+          _glassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _cardLabel('TOP EMOTIONS'),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    for (var i = 0; i < topEmotions.take(3).length; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Expanded(
+                        child: _emotionTile(
+                          topEmotions[i].key,
+                          (topEmotions[i].value as num).toDouble(),
+                          highlight: i == 0,
                         ),
                       ),
                     ],
-                  ),
-                );
-              }),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
+        if (topEmotions.isNotEmpty) const SizedBox(height: 14),
 
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _glassCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        if (_history.isNotEmpty) ...[
+          _glassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _cardLabel('STRESS'),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${(stress * 100).round()}%',
-                      style: GoogleFonts.outfit(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: stressColor,
-                      ),
-                    ),
-                    Text(
-                      stressLabel,
-                      style: TextStyle(fontSize: 11, color: stressColor),
+                    _cardLabel('LAST ${_history.length} ENTRIES'),
+                    const Text(
+                      'Perception score',
+                      style: TextStyle(fontSize: 11, color: green),
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 14),
+                _recentBars(),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _glassCard(
+          ),
+          const SizedBox(height: 14),
+        ],
+
+        _glassCard(
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: moodColor.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  stress > 0.4
+                      ? Icons.self_improvement_rounded
+                      : Icons.center_focus_strong_rounded,
+                  color: moodColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _cardLabel('TIP'),
-                    const SizedBox(height: 8),
+                    _cardLabel('SUGGESTION'),
+                    const SizedBox(height: 5),
                     Text(
                       stress > 0.4
                           ? 'Take a short break before your next task.'
                           : 'You seem settled — good time to focus.',
                       style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 13,
                         color: Colors.white70,
                         height: 1.4,
                       ),
@@ -1069,10 +1209,248 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _moodPill(String text, Color color, IconData? icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Stressed -> Neutral -> Calm track with a marker at [position] (0..1).
+  Widget _calmSpectrum(double position) {
+    final p = position.clamp(0.0, 1.0);
+    return Column(
+      children: [
+        LayoutBuilder(
+          builder: (context, c) {
+            const markerW = 4.0;
+            return SizedBox(
+              height: 18,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 4,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: Row(
+                        children: [
+                          Expanded(child: Container(height: 10, color: Colors.redAccent)),
+                          Expanded(child: Container(height: 10, color: amber)),
+                          Expanded(child: Container(height: 10, color: green)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: (c.maxWidth - markerW) * p,
+                    top: 0,
+                    child: Container(
+                      width: markerW,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 6),
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Stressed', style: TextStyle(fontSize: 10, color: Colors.white38)),
+            Text('Neutral', style: TextStyle(fontSize: 10, color: Colors.white38)),
+            Text('Calm', style: TextStyle(fontSize: 10, color: Colors.white38)),
           ],
         ),
       ],
     );
   }
+
+  static const _emotionEmoji = {
+    'happy': '🙂',
+    'neutral': '😐',
+    'sad': '😔',
+    'angry': '😠',
+    'fear': '😨',
+    'disgust': '🤢',
+    'surprise': '😮',
+  };
+
+  Widget _emotionTile(String name, double value, {required bool highlight}) {
+    final label = name.isEmpty
+        ? name
+        : '${name[0].toUpperCase()}${name.substring(1)}';
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlight ? cyan : Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            _emotionEmoji[name.toLowerCase()] ?? '🙂',
+            style: const TextStyle(fontSize: 24),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${(value * 100).round()}%',
+            style: GoogleFonts.outfit(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: Colors.white54),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One bar per recent analysed entry, taller and greener = better score.
+  Widget _recentBars() {
+    const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    return SizedBox(
+      height: 78,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: _history.map((e) {
+          final pas =
+              ((e['pas_score'] ?? 0) as num).toDouble().clamp(0.0, 100.0).toDouble();
+          final ms = entryTimestampMs(e['entry_id']?.toString() ?? '');
+          final day = ms == null
+              ? ''
+              : letters[DateTime.fromMillisecondsSinceEpoch(ms).weekday - 1];
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Container(
+                width: 26,
+                height: 8 + pas / 100 * 48,
+                decoration: BoxDecoration(
+                  color: _pasColor(pas),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(6),
+                    bottom: Radius.circular(3),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(day, style: const TextStyle(fontSize: 10, color: Colors.white38)),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+/// Four viewfinder corners, drawn in the card that holds the photo.
+class _BracketPainter extends CustomPainter {
+  final Color color;
+  const _BracketPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const inset = 16.0;
+    const len = 26.0;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    void corner(double x, double y, double dx, double dy) {
+      canvas.drawLine(Offset(x, y), Offset(x + dx * len, y), paint);
+      canvas.drawLine(Offset(x, y), Offset(x, y + dy * len), paint);
+    }
+
+    corner(inset, inset, 1, 1);
+    corner(size.width - inset, inset, -1, 1);
+    corner(inset, size.height - inset, 1, -1);
+    corner(size.width - inset, size.height - inset, -1, -1);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BracketPainter old) => old.color != color;
+}
+
+/// A flat donut: one arc per value, in the matching colour.
+class _DonutPainter extends CustomPainter {
+  final List<double> values;
+  final List<Color> colors;
+  const _DonutPainter({required this.values, required this.colors});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 16.0;
+    final rect = Rect.fromLTWH(stroke / 2, stroke / 2,
+        size.width - stroke, size.height - stroke);
+    final total = values.fold<double>(0, (a, b) => a + b);
+    if (total <= 0) return;
+    var start = -math.pi / 2;
+    for (var i = 0; i < values.length; i++) {
+      final sweep = values[i] / total * 2 * math.pi;
+      canvas.drawArc(
+        rect,
+        start,
+        sweep,
+        false,
+        Paint()
+          ..color = colors[i]
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke,
+      );
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutPainter old) =>
+      old.values != values || old.colors != colors;
 }

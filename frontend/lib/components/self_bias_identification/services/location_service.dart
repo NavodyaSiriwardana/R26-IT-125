@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
-import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
 
 /// Handles saving/reading a user's known locations and matching
 /// a live GPS reading against them using the Haversine formula.
@@ -10,12 +10,13 @@ import 'api_service.dart';
 /// directly (via firebase_admin); the app goes through the REST API,
 /// same as [ApiService].
 class LocationService {
-  static const String _baseUrl = ApiService.baseUrl;
+  // A getter, not a const: ApiService.baseUrl can be repointed at run time.
+  static String get _baseUrl => ApiService.baseUrl;
 
   /// Fetch all saved locations for a user.
   /// Returns e.g. { "Library": {"lat": 6.91, "lng": 79.97, "radius_m": 80} }
   static Future<Map<String, dynamic>> getUserLocations(String userId) async {
-    final response = await http.get(
+    final response = await ApiClient.get(
       Uri.parse('$_baseUrl/api/bias/locations/$userId'),
     );
     if (response.statusCode == 200) {
@@ -33,7 +34,7 @@ class LocationService {
     required double lng,
     required double radiusMeters,
   }) async {
-    final response = await http.post(
+    final response = await ApiClient.post(
       Uri.parse('$_baseUrl/api/bias/locations/$userId'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -50,7 +51,7 @@ class LocationService {
 
   /// Delete a named location.
   static Future<void> deleteLocation(String userId, String name) async {
-    final response = await http.delete(
+    final response = await ApiClient.delete(
       Uri.parse(
           '$_baseUrl/api/bias/locations/$userId/${Uri.encodeComponent(name)}'),
     );

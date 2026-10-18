@@ -1,5 +1,6 @@
 import re
 import time
+from datetime import datetime, timezone
 
 # Translates a document from the team's shared `diaryEntries` collection
 # (owned by the group leader's component — camelCase fields, different
@@ -58,6 +59,7 @@ def map_leader_entry(doc: dict) -> dict:
 
     return {
         "entry_id": f"ENT_LEADER_{int(time.time() * 1000)}",
+        "source_doc_id": doc.get("_doc_id", ""),
         "user_id": doc.get("userId", ""),
         "claimed_activity": doc.get("activityName", ""),
         "activity_category": doc.get("activityCategory", ""),
@@ -77,3 +79,28 @@ def map_leader_entry(doc: dict) -> dict:
         "health_status": doc.get("healthStatus", ""),
         "diary_text": doc.get("notes", ""),
     }
+
+
+# The phone's usage and location are read for the last few hours only, so an
+# entry about something much older cannot be checked against them fairly.
+STALE_ENTRY_HOURS = 6
+
+
+def entry_age_hours(doc: dict, now: datetime | None = None) -> float | None:
+    """Hours since the activity in this diary document ended, or None when it
+    cannot be told. Uses the entry's own date and end time, and falls back to
+    when the entry was saved."""
+    now = now or datetime.now()
+    date, end = doc.get("entryDate", ""), doc.get("endTime", "")
+    if date and end:
+        try:
+            ended = datetime.strptime(f"{date} {end}", "%Y-%m-%d %H:%M")
+            hours = (now - ended).total_seconds() / 3600
+            return round(hours, 1) if hours >= 0 else 0.0
+        except ValueError:
+            pass
+    created = doc.get("createdAt")
+    if isinstance(created, datetime):
+        ref = now.astimezone(created.tzinfo) if created.tzinfo else now
+        return round(max((ref - created).total_seconds() / 3600, 0.0), 1)
+    return None

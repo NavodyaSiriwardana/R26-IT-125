@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:frontend/app_state.dart';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
+import 'package:frontend/components/self_bias_identification/services/entry_time.dart';
+import 'package:frontend/components/self_bias_identification/services/history_data.dart';
+import 'package:frontend/components/self_bias_identification/widgets/your_trend_card.dart';
+import 'package:frontend/components/self_bias_identification/widgets/app_toast.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
+import 'package:frontend/components/self_bias_identification/screens/bias_history_screen.dart';
+import 'package:frontend/components/self_bias_identification/screens/facial_history_screen.dart';
 
 class WeeklyTrendsScreen extends StatefulWidget {
   const WeeklyTrendsScreen({super.key});
@@ -12,41 +18,27 @@ class WeeklyTrendsScreen extends StatefulWidget {
   State<WeeklyTrendsScreen> createState() => _WeeklyTrendsScreenState();
 }
 
-class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
-    with SingleTickerProviderStateMixin {
+class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen> {
   List<Map<String, dynamic>> _history = [];
   bool _isLoading = true;
   double _avgPas = 0;
   int _totalEntries = 0;
   int _biasCount = 0;
   Map<String, int> _biasFrequency = {};
-  List<int> _pasScores = [];
+  List<HistoryEntry> _entries = [];
   List<DateTime> _pasDates = [];
   List<Map<String, dynamic>> _moodPatterns = [];
   List<Map<String, dynamic>?> _facialHistory = [];
 
-  // Drives the breathing glow on the trend chart's latest point.
-  late final AnimationController _pulseController;
-
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
     _loadData();
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadData() async {
     try {
-      final response = await http.get(
+      final response = await ApiClient.get(
         Uri.parse('${ApiService.baseUrl}/api/bias/history/${AppState.userId}'),
       );
       if (response.statusCode == 200) {
@@ -56,7 +48,6 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
         double total = 0;
         int biasCount = 0;
         Map<String, int> freq = {};
-        List<int> scores = [];
         List<DateTime> dates = [];
         List<Map<String, dynamic>?> facialHistory = [];
         Map<String, int> moodMap = {};
@@ -64,9 +55,8 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
         for (var entry in history) {
           final pas = entry['pas_score'] ?? 0;
           total += pas;
-          scores.add(pas);
           final entryId = entry['entry_id']?.toString() ?? '';
-          final ts = int.tryParse(entryId.replaceAll('ENT_', ''));
+          final ts = entryTimestampMs(entryId);
           dates.add(ts != null
               ? DateTime.fromMillisecondsSinceEpoch(ts)
               : DateTime.now());
@@ -112,16 +102,19 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           _avgPas = history.isNotEmpty ? total / history.length : 0;
           _biasCount = biasCount;
           _biasFrequency = freq;
-          _pasScores = scores.take(7).toList().reversed.toList();
           _pasDates = dates.take(7).toList().reversed.toList();
+          _entries = history
+              .map((e) => HistoryEntry.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
           _facialHistory = facialHistory.take(7).toList().reversed.toList();
           _moodPatterns = moodList.take(4).toList();
         });
       }
     } catch (e) {
-      print('Error: $e');
+      debugPrint('Error: $e');
+      if (mounted) AppToast.error(context, AppToast.friendlyError(e));
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -149,7 +142,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
             ),
             const Text(
               'Last 7 entries',
-              style: TextStyle(fontSize: 12, color: Colors.white54),
+              style: TextStyle(fontSize: 14, color: Colors.white54),
             ),
           ],
         ),
@@ -215,8 +208,8 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
 
                   const SizedBox(height: 24),
 
-                  // PAS Trend — stock-app style hero panel
-                  _pasHeroPanel(),
+                  // The trend, against the student's own usual level.
+                  YourTrendCard(entries: _entries),
 
                   if (_facialHistory.any((f) => f != null)) ...[
                     const SizedBox(height: 24),
@@ -229,6 +222,10 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
                     _modernCard(
                       title: 'Bias Frequency',
                       subtitle: 'All time',
+                      onSeeAll: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BiasHistoryScreen()),
+                      ),
                       child: _biasFreqChart(),
                     ),
 
@@ -257,10 +254,10 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         boxShadow: [
           BoxShadow(
-            color: accent.withOpacity(0.18),
+            color: accent.withValues(alpha: 0.18),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -282,8 +279,8 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           Text(
             label,
             style: TextStyle(
-              fontSize: 13,
-              color: Colors.white.withOpacity(0.55),
+              fontSize: 15,
+              color: Colors.white.withValues(alpha: 0.55),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -296,6 +293,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
     required String title,
     required String subtitle,
     required Widget child,
+    VoidCallback? onSeeAll,
   }) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -304,15 +302,15 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.white.withOpacity(0.07),
-            Colors.white.withOpacity(0.02),
+            Colors.white.withValues(alpha: 0.07),
+            Colors.white.withValues(alpha: 0.02),
           ],
         ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withOpacity(0.09)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.35),
+            color: Colors.black.withValues(alpha: 0.35),
             blurRadius: 30,
             offset: const Offset(0, 14),
           ),
@@ -334,216 +332,33 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
               Text(
                 subtitle,
                 style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white.withOpacity(0.4),
+                  fontSize: 14,
+                  color: Colors.white.withValues(alpha: 0.4),
                 ),
               ),
             ],
           ),
+          if (onSeeAll != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: onSeeAll,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'See all ›',
+                    style: GoogleFonts.outfit(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFB2A8FF),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           const SizedBox(height: 16),
           child,
         ],
-      ),
-    );
-  }
-
-  // ==================== STOCK-APP STYLE HERO PANEL ====================
-  Widget _pasHeroPanel() {
-    final hasScores = _pasScores.isNotEmpty;
-    final latest = hasScores ? _pasScores.last : 0;
-    final int? delta = _pasScores.length >= 2
-        ? _pasScores.last - _pasScores[_pasScores.length - 2]
-        : null;
-    final deltaColor = delta == null
-        ? Colors.white38
-        : delta >= 0
-        ? const Color(0xFF4ADE80)
-        : const Color(0xFFFF6B6B);
-
-    final trendColor = !hasScores
-        ? const Color(0xFF7B6EFF)
-        : _avgPas >= 70
-        ? const Color(0xFF4ADE80)
-        : _avgPas >= 50
-        ? const Color(0xFFFFB74D)
-        : const Color(0xFFFF6B6B);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withOpacity(0.07),
-            Colors.white.withOpacity(0.02),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.09)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.4),
-            blurRadius: 40,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          // Ambient trend-colored glow tucked in the corner — ties the
-          // whole card together instead of a flat glass panel.
-          Positioned(
-            top: -60,
-            right: -60,
-            child: Container(
-              width: 180,
-              height: 180,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [trendColor.withOpacity(0.18), Colors.transparent],
-                ),
-              ),
-            ),
-          ),
-          Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'PAS Score Trend',
-            style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 18),
-          if (hasScores) ...[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(
-                  '$latest',
-                  style: GoogleFonts.outfit(
-                    fontSize: 40,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                if (delta != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: deltaColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          delta >= 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-                          size: 11,
-                          color: deltaColor,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${delta.abs()}',
-                          style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: deltaColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            Text(
-              delta == null ? 'Last ${_pasScores.length} entries' : 'vs previous entry',
-              style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.45)),
-            ),
-            const SizedBox(height: 18),
-          ],
-          _pasLineChart(),
-          if (hasScores) ...[
-            const SizedBox(height: 8),
-            Divider(color: Colors.white.withOpacity(0.08), height: 25),
-            Row(
-              children: [
-                Expanded(
-                  child: _heroStat(
-                    'BEST',
-                    '${_pasScores.reduce((a, b) => a > b ? a : b)}',
-                    const Color(0xFF4ADE80),
-                  ),
-                ),
-                Expanded(
-                  child: _heroStat(
-                    'AVG',
-                    '${(_pasScores.reduce((a, b) => a + b) / _pasScores.length).round()}',
-                    Colors.white70,
-                  ),
-                ),
-                Expanded(
-                  child: _heroStat(
-                    'WORST',
-                    '${_pasScores.reduce((a, b) => a < b ? a : b)}',
-                    const Color(0xFFFF6B6B),
-                  ),
-                ),
-              ],
-            ),
-          ],
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _heroStat(String label, String value, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.6,
-            color: Colors.white.withOpacity(0.4),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: GoogleFonts.outfit(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _pasLineChart() {
-    if (_pasScores.isEmpty) return const SizedBox(height: 180);
-    return SizedBox(
-      height: 190,
-      child: AnimatedBuilder(
-        animation: _pulseController,
-        builder: (context, child) {
-          return CustomPaint(
-            painter: _LineChartPainter(
-              _pasScores,
-              _pasDates,
-              pulse: _pulseController.value,
-            ),
-            size: const Size(double.infinity, 190),
-          );
-        },
       ),
     );
   }
@@ -556,6 +371,10 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
     return _modernCard(
       title: 'Facial Check History',
       subtitle: 'Last ${_facialHistory.length} entries',
+      onSeeAll: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const FacialHistoryScreen()),
+      ),
       child: Container(
         padding: const EdgeInsets.only(top: 10),
         decoration: BoxDecoration(
@@ -587,7 +406,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
         children: [
           Text(
             '·',
-            style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.15)),
+            style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.15)),
           ),
           const SizedBox(height: 4),
           const SizedBox(width: 4, height: 4),
@@ -644,7 +463,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
                 width: 110,
                 child: Text(
                   _formatShort(entry.key),
-                  style: const TextStyle(fontSize: 13, color: Colors.white70),
+                  style: const TextStyle(fontSize: 15, color: Colors.white70),
                 ),
               ),
               Expanded(
@@ -652,7 +471,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
                   borderRadius: BorderRadius.circular(6),
                   child: LinearProgressIndicator(
                     value: entry.value / maxVal,
-                    backgroundColor: Colors.white.withOpacity(0.08),
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
                     valueColor: AlwaysStoppedAnimation(color),
                     minHeight: 8,
                   ),
@@ -661,7 +480,7 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
               const SizedBox(width: 12),
               Text(
                 '${entry.value}x',
-                style: const TextStyle(fontSize: 13, color: Colors.white54),
+                style: const TextStyle(fontSize: 15, color: Colors.white54),
               ),
             ],
           ),
@@ -716,12 +535,12 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
                   vertical: 2,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
+                  color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   '${count}x',
-                  style: const TextStyle(fontSize: 12, color: Colors.white60),
+                  style: const TextStyle(fontSize: 14, color: Colors.white60),
                 ),
               ),
             ],
@@ -747,290 +566,4 @@ class _WeeklyTrendsScreenState extends State<WeeklyTrendsScreen>
         return type.replaceAll('_', ' ').toUpperCase();
     }
   }
-}
-
-// ==================== MODERN LINE CHART PAINTER ====================
-class _LineChartPainter extends CustomPainter {
-  final List<int> scores;
-  final List<DateTime> dates;
-  final double pulse;
-  _LineChartPainter(this.scores, this.dates, {this.pulse = 0});
-
-  static const _weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-  /// A dashed straight line — Canvas has no native dash support, so this
-  /// walks the segment in fixed-length on/off steps.
-  void _drawDashedLine(Canvas canvas, Offset from, Offset to, Paint paint,
-      {double dashLength = 4, double gapLength = 3}) {
-    final total = (to - from).distance;
-    if (total == 0) return;
-    final direction = (to - from) / total;
-    double covered = 0;
-    while (covered < total) {
-      final segEnd = (covered + dashLength).clamp(0.0, total);
-      canvas.drawLine(
-        from + direction * covered,
-        from + direction * segEnd,
-        paint,
-      );
-      covered += dashLength + gapLength;
-    }
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (scores.length < 2) return;
-
-    final w = size.width;
-    // Reserve space on the right for reference value labels and at the
-    // bottom for weekday labels, matching a real stock-chart layout.
-    const rightAxisWidth = 30.0;
-    const bottomAxisHeight = 20.0;
-    final chartW = w - rightAxisWidth;
-    final h = size.height - bottomAxisHeight;
-
-    // Paints — the line's color shifts along its length (orange where low,
-    // green where strong) instead of one flat purple regardless of value.
-    final linePaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [
-          Color(0xFFFFB74D),
-          Color(0xFF7B6EFF),
-          Color(0xFF4ADE80),
-          Color(0xFF4ADE80),
-        ],
-        stops: [0.0, 0.35, 0.7, 1.0],
-      ).createShader(Rect.fromLTWH(0, 0, chartW, h))
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final shadowPaint = Paint()
-      ..color = const Color(0xFF4ADE80).withOpacity(0.24)
-      ..strokeWidth = 7
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        colors: [
-          const Color(0xFF7B6EFF).withOpacity(0.30),
-          const Color(0xFF7B6EFF).withOpacity(0.10),
-          const Color(0xFF7B6EFF).withOpacity(0.0),
-        ],
-        stops: const [0.0, 0.55, 1.0],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTWH(0, 0, chartW, h));
-
-    final gridPaint = Paint()
-      ..color = Colors.white.withOpacity(0.05)
-      ..strokeWidth = 1;
-
-    final targetPaint = Paint()
-      ..color = Colors.white.withOpacity(0.25)
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
-
-    // Right-axis reference values (100 / target 70 / 40), like a stock
-    // chart's price axis.
-    void axisLabel(String text, double y, {Color color = Colors.white38, bool bold = false}) {
-      final tp = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: TextStyle(
-            color: color,
-            fontSize: 10,
-            fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(chartW + 6, y - tp.height / 2));
-    }
-
-    // Grid + right-axis labels at 100 / 70 (target) / 40
-    canvas.drawLine(Offset(0, 2), Offset(chartW, 2), gridPaint);
-    axisLabel('100', 2);
-
-    final targetY = h * (1 - 70 / 100);
-
-    // Target-zone tint — the whole 70+ band gets a faint green wash so it
-    // reads instantly as "the good zone" without checking the axis number.
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, chartW, targetY),
-      Paint()..color = const Color(0xFF4ADE80).withOpacity(0.045),
-    );
-    _drawDashedLine(
-      canvas,
-      Offset(0, targetY),
-      Offset(chartW, targetY),
-      targetPaint,
-    );
-    final zoneLabelTp = TextPainter(
-      text: TextSpan(
-        text: 'TARGET ZONE 70+',
-        style: TextStyle(
-          color: const Color(0xFF4ADE80).withOpacity(0.55),
-          fontSize: 8,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.4,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    zoneLabelTp.paint(canvas, Offset(4, targetY - zoneLabelTp.height - 4));
-    axisLabel('70', targetY, color: const Color(0xFF4ADE80), bold: true);
-
-    final lowY = h * (1 - 40 / 100);
-    canvas.drawLine(Offset(0, lowY), Offset(chartW, lowY), gridPaint);
-    axisLabel('40', lowY);
-
-    // Points
-    final points = <Offset>[];
-    for (int i = 0; i < scores.length; i++) {
-      final x = i * chartW / (scores.length - 1);
-      final y = h * (1 - scores[i] / 100) - 10;
-      points.add(Offset(x, y));
-    }
-
-    // Catmull-Rom spline through every real point — a properly smooth,
-    // continuous curve (rather than a piecewise midpoint bezier), matching
-    // the fluid line quality of a real stock-chart renderer.
-    Path smoothPath(List<Offset> pts) {
-      final p = Path()..moveTo(pts.first.dx, pts.first.dy);
-      for (int i = 0; i < pts.length - 1; i++) {
-        final p0 = i == 0 ? pts[i] : pts[i - 1];
-        final p1 = pts[i];
-        final p2 = pts[i + 1];
-        final p3 = i + 2 < pts.length ? pts[i + 2] : p2;
-        final cp1 = Offset(p1.dx + (p2.dx - p0.dx) / 6, p1.dy + (p2.dy - p0.dy) / 6);
-        final cp2 = Offset(p2.dx - (p3.dx - p1.dx) / 6, p2.dy - (p3.dy - p1.dy) / 6);
-        p.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, p2.dx, p2.dy);
-      }
-      return p;
-    }
-
-    final curve = smoothPath(points);
-
-    // Shadow line (soft glow beneath the main stroke)
-    canvas.drawPath(curve, shadowPaint);
-
-    // Fill area — reuses the exact same curve so the fill edge and the
-    // line never diverge.
-    final fillPath = Path.from(curve)
-      ..lineTo(points.last.dx, h - 10)
-      ..lineTo(points.first.dx, h - 10)
-      ..close();
-    canvas.drawPath(fillPath, fillPaint);
-
-    // Main smooth line
-    canvas.drawPath(curve, linePaint);
-
-    // Dots — every real entry gets a marker, but only the latest (current)
-    // one carries the glow halo, matching how a stock app emphasizes just
-    // the current price and keeps history markers understated.
-    for (int i = 0; i < points.length; i++) {
-      final score = scores[i];
-      final color = score >= 70
-          ? const Color(0xFF4ADE80)
-          : score >= 50
-          ? const Color(0xFFFFB74D)
-          : const Color(0xFFFF6B6B);
-      final isLatest = i == points.length - 1;
-
-      if (isLatest) {
-        // Dashed crosshair down to the baseline — same idea as a trading
-        // app's guide line under the current price.
-        _drawDashedLine(
-          canvas,
-          Offset(points[i].dx, points[i].dy),
-          Offset(points[i].dx, h - 10),
-          Paint()
-            ..color = color.withOpacity(0.25)
-            ..strokeWidth = 1,
-          dashLength: 2,
-          gapLength: 3,
-        );
-
-        // Breathing glow ring, driven by the animation controller.
-        final pulseRadius = 8 + 5 * pulse;
-        final pulseOpacity = 0.28 - 0.20 * pulse;
-        canvas.drawCircle(
-          points[i],
-          pulseRadius,
-          Paint()..color = color.withOpacity(pulseOpacity.clamp(0.0, 1.0)),
-        );
-        canvas.drawCircle(points[i], 5.5, Paint()..color = color);
-        canvas.drawCircle(points[i], 2.4, Paint()..color = const Color(0xFF0A0E14));
-
-        // Floating tooltip — exact score + day, anchored above the dot.
-        final tooltipText =
-            '${scores[i]}  ·  ${_weekdayLabels[dates[i].weekday - 1]}';
-        final tooltipTp = TextPainter(
-          text: TextSpan(
-            text: tooltipText,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        final tooltipPadding = 7.0;
-        final tooltipW = tooltipTp.width + tooltipPadding * 2;
-        final tooltipH = tooltipTp.height + tooltipPadding * 1.2;
-        final tooltipLeft = (points[i].dx - tooltipW).clamp(0.0, chartW - tooltipW);
-        final tooltipTop = (points[i].dy - tooltipH - 12).clamp(0.0, h);
-        final tooltipRect = RRect.fromRectAndRadius(
-          Rect.fromLTWH(tooltipLeft, tooltipTop, tooltipW, tooltipH),
-          const Radius.circular(8),
-        );
-        canvas.drawRRect(
-          tooltipRect,
-          Paint()..color = const Color(0xFF171B23),
-        );
-        canvas.drawRRect(
-          tooltipRect,
-          Paint()
-            ..color = color.withOpacity(0.4)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1,
-        );
-        tooltipTp.paint(
-          canvas,
-          Offset(tooltipLeft + tooltipPadding, tooltipTop + tooltipPadding * 0.6),
-        );
-      } else {
-        canvas.drawCircle(points[i], 3.2, Paint()..color = color);
-        canvas.drawCircle(points[i], 1.3, Paint()..color = const Color(0xFF0A0E14));
-      }
-    }
-
-    // Weekday labels along the bottom, from each entry's real timestamp.
-    for (int i = 0; i < points.length && i < dates.length; i++) {
-      final label = _weekdayLabels[dates[i].weekday - 1];
-      final tp = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: const TextStyle(
-            color: Colors.white38,
-            fontSize: 10.5,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(
-        canvas,
-        Offset(points[i].dx - tp.width / 2, h + bottomAxisHeight - 16),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter old) => true;
 }

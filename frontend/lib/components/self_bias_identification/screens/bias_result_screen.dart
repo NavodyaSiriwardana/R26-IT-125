@@ -2,8 +2,11 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/components/self_bias_identification/screens/weekly_trends_screen.dart';
-import 'package:frontend/components/self_bias_identification/widgets/gradient_ring_painter.dart';
 import 'package:frontend/components/self_bias_identification/widgets/tilt_card.dart';
+import 'package:frontend/components/self_bias_identification/widgets/compared_with_usual.dart';
+import 'package:frontend/components/self_bias_identification/widgets/mood_support_card.dart';
+import 'package:frontend/components/self_bias_identification/widgets/score_gauge.dart';
+import 'package:frontend/components/self_bias_identification/widgets/app_toast.dart';
 
 class BiasResultScreen extends StatefulWidget {
   final Map<String, dynamic> result;
@@ -31,6 +34,17 @@ class _BiasResultScreenState extends State<BiasResultScreen>
       vsync: this,
       duration: const Duration(milliseconds: 850),
     )..forward();
+
+    // The backend reports `saved: false` when a Firestore write failed.
+    if (widget.result['saved'] == false) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        AppToast.warning(
+          context,
+          'Analysis finished, but it could not be saved to your history. Check your connection.',
+        );
+      });
+    }
   }
 
   @override
@@ -85,7 +99,10 @@ class _BiasResultScreenState extends State<BiasResultScreen>
         : _red;
     final badgeColor = isAccurate ? _green : _red;
 
+    final entryAge = (result['entry_age_hours'] as num?)?.toDouble();
     final sections = <Widget>[
+      if (result['stale_entry'] == true && entryAge != null)
+        _staleEntryNotice(entryAge),
       TiltCard(
         borderRadius: BorderRadius.circular(24),
         child: _heroCard(
@@ -101,6 +118,8 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           streakCount: streakCount,
         ),
       ),
+      // How this result sits against the student's own usual (context only).
+      ComparedWithUsual(result: Map<String, dynamic>.from(result)),
       if (explanation.isNotEmpty) _explanationCard(explanation),
       TiltCard(
         borderRadius: BorderRadius.circular(24),
@@ -111,6 +130,14 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           ),
         ),
       ),
+      if (result['mood_support'] is Map)
+        MoodSupportCard(
+          moodSupport: Map<String, dynamic>.from(result['mood_support'] as Map),
+          facialEmotion: comparison['facial_emotion'] is Map
+              ? Map<String, dynamic>.from(comparison['facial_emotion'] as Map)
+              : null,
+          entryId: result['entry_id']?.toString() ?? '',
+        ),
       if (indicators.isNotEmpty) _indicatorsCard(indicators),
       if (reflection.toString().trim().isNotEmpty)
         _reflectionCard(reflection.toString()),
@@ -123,23 +150,9 @@ class _BiasResultScreenState extends State<BiasResultScreen>
       extendBodyBehindAppBar: true,
       appBar: _glassAppBar(context, result['entry_id']?.toString() ?? ''),
       body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: const Alignment(-0.6, -1.05),
-            radius: 1.3,
-            colors: [_accent.withValues(alpha: 0.16), Colors.transparent],
-            stops: const [0.0, 0.6],
-          ),
-        ),
+        decoration: BoxDecoration(),
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: const Alignment(1.1, 1.2),
-              radius: 1.1,
-              colors: [pasColor.withValues(alpha: 0.10), Colors.transparent],
-              stops: const [0.0, 0.65],
-            ),
-          ),
+          decoration: BoxDecoration(),
           child: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
               16,
@@ -194,22 +207,8 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                       width: 34,
                       height: 34,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            _accent.withValues(alpha: 0.9),
-                            _accent2.withValues(alpha: 0.6),
-                          ],
-                        ),
+                        color: _accent.withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(11),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _accent.withValues(alpha: 0.35),
-                            blurRadius: 16,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
                       ),
                       child: const Icon(
                         Icons.psychology_alt_rounded,
@@ -235,7 +234,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                             Text(
                               entryId,
                               style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 13,
                                 color: Colors.white.withValues(alpha: 0.4),
                               ),
                             ),
@@ -284,7 +283,9 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -298,7 +299,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                     Text(
                       'XGBoost',
                       style: TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.5),
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.2,
@@ -328,7 +329,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
               Text(
                 '${(confidence * 100).toStringAsFixed(1)}% confidence',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 15,
                   color: Colors.white.withValues(alpha: 0.55),
                   fontWeight: FontWeight.w500,
                 ),
@@ -342,7 +343,10 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           const SizedBox(height: 22),
           Center(child: _pasGauge(pasScore, pasLevel, pasColor)),
           _divider(),
-          _sectionLabel('Claimed vs Verified', icon: Icons.compare_arrows_rounded),
+          _sectionLabel(
+            'Claimed vs Verified',
+            icon: Icons.compare_arrows_rounded,
+          ),
           const SizedBox(height: 16),
           _bar(
             Icons.schedule_rounded,
@@ -390,23 +394,9 @@ class _BiasResultScreenState extends State<BiasResultScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            badgeColor.withValues(alpha: 0.24),
-            badgeColor.withValues(alpha: 0.1),
-          ],
-        ),
+        color: badgeColor.withValues(alpha: 0.24),
         borderRadius: BorderRadius.circular(30),
         border: Border.all(color: badgeColor.withValues(alpha: 0.35)),
-        boxShadow: [
-          BoxShadow(
-            color: badgeColor.withValues(alpha: 0.18),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -420,7 +410,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           Text(
             isAccurate ? 'Good Alignment' : 'Bias Detected',
             style: GoogleFonts.outfit(
-              fontSize: 13,
+              fontSize: 15,
               color: badgeColor,
               fontWeight: FontWeight.w600,
             ),
@@ -458,7 +448,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
             child: RichText(
               text: TextSpan(
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 13,
                   height: 1.4,
                   color: Colors.white.withValues(alpha: 0.6),
                 ),
@@ -480,81 +470,11 @@ class _BiasResultScreenState extends State<BiasResultScreen>
     );
   }
 
-  /// Mirrors the gauge used on the home dashboard (ticks + gradient ring)
-  /// so the "biometric" visual language stays consistent across screens.
+  /// The score as a bike-meter dial with a needle (see [ScoreGauge]).
   Widget _pasGauge(int pasScore, String pasLevel, Color pasColor) {
     return Column(
       children: [
-        TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0, end: pasScore / 100),
-          duration: const Duration(milliseconds: 1300),
-          curve: Curves.easeOutCubic,
-          builder: (context, animatedProgress, _) {
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: pasColor.withValues(alpha: 0.30),
-                        blurRadius: 50,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(
-                  width: 140,
-                  height: 140,
-                  child: CustomPaint(painter: RingTicksPainter()),
-                ),
-                SizedBox(
-                  width: 104,
-                  height: 104,
-                  child: CustomPaint(
-                    painter: GradientRingPainter(
-                      progress: animatedProgress,
-                      colors: [pasColor.withValues(alpha: 0.75), pasColor],
-                      strokeWidth: 8.5,
-                      glowDot: true,
-                    ),
-                  ),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0, end: pasScore.toDouble()),
-                      duration: const Duration(milliseconds: 1300),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, value, _) => Text(
-                        '${value.round()}',
-                        style: GoogleFonts.outfit(
-                          fontSize: 36,
-                          height: 1,
-                          fontWeight: FontWeight.w800,
-                          color: pasColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'out of 100',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: Colors.white.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            );
-          },
-        ),
+        ScoreGauge(score: pasScore, width: 280),
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -566,7 +486,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           child: Text(
             pasLevel.isEmpty ? 'Analyzed' : pasLevel,
             style: GoogleFonts.outfit(
-              fontSize: 12.5,
+              fontSize: 14,
               fontWeight: FontWeight.w700,
               color: pasColor,
             ),
@@ -576,7 +496,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
         Text(
           'SAS Score · Target 70+',
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 13,
             color: Colors.white.withValues(alpha: 0.35),
           ),
         ),
@@ -595,23 +515,9 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           width: double.infinity,
           padding: padding ?? const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.025),
-              ],
-            ),
+            color: Colors.white.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 32,
-                offset: const Offset(0, 16),
-              ),
-            ],
           ),
           child: child,
         ),
@@ -629,7 +535,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
         Text(
           text.toUpperCase(),
           style: GoogleFonts.outfit(
-            fontSize: 11,
+            fontSize: 13,
             color: Colors.white.withValues(alpha: 0.45),
             letterSpacing: 0.8,
             fontWeight: FontWeight.w600,
@@ -644,15 +550,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
       padding: const EdgeInsets.symmetric(vertical: 18),
       child: Container(
         height: 1,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.transparent,
-              Colors.white.withValues(alpha: 0.12),
-              Colors.transparent,
-            ],
-          ),
-        ),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.10)),
       ),
     );
   }
@@ -683,7 +581,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                 child: Text(
                   label,
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 14,
                     color: Colors.white.withValues(alpha: 0.65),
                   ),
                 ),
@@ -691,7 +589,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
               Text(
                 '$value min',
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 14,
                   color: color,
                   fontWeight: FontWeight.w600,
                 ),
@@ -713,6 +611,58 @@ class _BiasResultScreenState extends State<BiasResultScreen>
     );
   }
 
+  // ==================== Old diary entry notice ====================
+
+  /// Phone usage and location are read for the last few hours only, so an
+  /// entry about something much older may not match them.
+  Widget _staleEntryNotice(double hours) {
+    final age = hours >= 48
+        ? '${(hours / 24).round()} days'
+        : '${hours.round()} hours';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _orange.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.schedule_rounded, color: _orange, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This diary entry was not recent',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: _orange,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'It was about $age old when analyzed. Phone data covers the '
+                  'last 3 hours, so the comparison may not match. For the best '
+                  'result, analyze soon after you finish an activity.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ==================== Indicators Card ====================
 
   Widget _indicatorsCard(List indicators) {
@@ -720,7 +670,10 @@ class _BiasResultScreenState extends State<BiasResultScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionLabel('Additional Indicators', icon: Icons.report_gmailerrorred_rounded),
+          _sectionLabel(
+            'Additional Indicators',
+            icon: Icons.report_gmailerrorred_rounded,
+          ),
           const SizedBox(height: 14),
           ...indicators.map(
             (ind) => _indicatorRow(ind['type'] ?? '', ind['reason'] ?? ''),
@@ -771,7 +724,11 @@ class _BiasResultScreenState extends State<BiasResultScreen>
             ),
             child: const Text(
               'Detected',
-              style: TextStyle(fontSize: 10, color: _red, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 12,
+                color: _red,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -793,7 +750,10 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           const SizedBox(height: 4),
           Text(
             'What most influenced this specific prediction',
-            style: TextStyle(fontSize: 11.5, color: Colors.white.withValues(alpha: 0.4)),
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.white.withValues(alpha: 0.4),
+            ),
           ),
           const SizedBox(height: 16),
           ...explanation.map((e) => _explanationRow(e as Map)),
@@ -817,7 +777,9 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           Row(
             children: [
               Icon(
-                increased ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                increased
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
                 size: 13,
                 color: color,
               ),
@@ -830,7 +792,11 @@ class _BiasResultScreenState extends State<BiasResultScreen>
               ),
               Text(
                 '${(weight * 100).round()}%',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color),
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
               ),
             ],
           ),
@@ -862,13 +828,17 @@ class _BiasResultScreenState extends State<BiasResultScreen>
       return _glassCard(
         child: Row(
           children: [
-            _iconChip(Icons.face_retouching_off_outlined, Colors.white.withValues(alpha: 0.35), size: 30),
+            _iconChip(
+              Icons.face_retouching_off_outlined,
+              Colors.white.withValues(alpha: 0.35),
+              size: 30,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 'Facial check skipped for this entry',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 15,
                   color: Colors.white.withValues(alpha: 0.5),
                 ),
               ),
@@ -921,7 +891,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                 Text(
                   '${(stress * 100).round()}% stress signal · captured at diary entry',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 13,
                     color: Colors.white.withValues(alpha: 0.45),
                   ),
                 ),
@@ -960,70 +930,57 @@ class _BiasResultScreenState extends State<BiasResultScreen>
         filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(22),
+          // A rounded box cannot have a different colour on one side, so the
+          // orange left edge is drawn as a separate bar inside the box.
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                _orange.withValues(alpha: 0.11),
-                Colors.white.withValues(alpha: 0.025),
-              ],
-            ),
+            color: _orange.withValues(alpha: 0.11),
             borderRadius: BorderRadius.circular(24),
-            border: Border(
-              left: const BorderSide(color: _orange, width: 4),
-              top: BorderSide(color: Colors.white.withValues(alpha: 0.09)),
-              right: BorderSide(color: Colors.white.withValues(alpha: 0.09)),
-              bottom: BorderSide(color: Colors.white.withValues(alpha: 0.09)),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 32,
-                offset: const Offset(0, 16),
-              ),
-            ],
+            border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
           ),
           child: Stack(
             children: [
-              Positioned(
-                right: -6,
-                top: -14,
-                child: Icon(
-                  Icons.format_quote_rounded,
-                  size: 64,
-                  color: _orange.withValues(alpha: 0.10),
-                ),
+              const Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 4,
+                child: ColoredBox(color: _orange),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.auto_awesome_rounded, size: 13, color: _orange),
-                      const SizedBox(width: 6),
-                      Text(
-                        'TRUTHLENS AI REFLECTION',
-                        style: GoogleFonts.outfit(
-                          fontSize: 11,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(26, 22, 22, 22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.auto_awesome_rounded,
+                          size: 13,
                           color: _orange,
-                          letterSpacing: 1,
-                          fontWeight: FontWeight.w600,
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    reflection,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1.6,
-                      color: Colors.white70,
+                        const SizedBox(width: 6),
+                        Text(
+                          'TRUTHLENS REFLECTION',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            color: _orange,
+                            letterSpacing: 1,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    Text(
+                      reflection,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.6,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1045,7 +1002,10 @@ class _BiasResultScreenState extends State<BiasResultScreen>
               _sectionLabel('Suggested Actions', icon: Icons.checklist_rounded),
               if (isRecurring)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: _accent2.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(20),
@@ -1054,7 +1014,11 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.autorenew_rounded, size: 11, color: _accent2),
+                      const Icon(
+                        Icons.autorenew_rounded,
+                        size: 11,
+                        color: _accent2,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         'Updated',
@@ -1080,18 +1044,14 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                     width: 24,
                     height: 24,
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [_accent, _accent2],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      color: _accent,
                       shape: BoxShape.circle,
                     ),
                     child: Center(
                       child: Text(
                         '${e.key + 1}',
                         style: const TextStyle(
-                          fontSize: 11.5,
+                          fontSize: 13,
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                         ),
@@ -1137,19 +1097,8 @@ class _BiasResultScreenState extends State<BiasResultScreen>
           child: Ink(
             padding: const EdgeInsets.symmetric(vertical: 16),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [_accent, Color(0xFF5B4FE0)],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
+              color: _accent,
               borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                  color: _accent.withValues(alpha: 0.4),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ],
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1163,7 +1112,11 @@ class _BiasResultScreenState extends State<BiasResultScreen>
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
+                const Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 18,
+                  color: Colors.white,
+                ),
               ],
             ),
           ),
@@ -1284,7 +1237,7 @@ class _ExpandableBarState extends State<_ExpandableBar> {
                           widget.label,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: 14,
                             color: Colors.white.withValues(alpha: 0.65),
                           ),
                         ),
@@ -1305,7 +1258,7 @@ class _ExpandableBarState extends State<_ExpandableBar> {
                 Text(
                   '${widget.value} min',
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 14,
                     color: widget.color,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1358,8 +1311,10 @@ class _ExpandableBarState extends State<_ExpandableBar> {
                                     e.key,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.white.withValues(alpha: 0.65),
+                                      fontSize: 13,
+                                      color: Colors.white.withValues(
+                                        alpha: 0.65,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1369,7 +1324,7 @@ class _ExpandableBarState extends State<_ExpandableBar> {
                           Text(
                             '$minutes min',
                             style: TextStyle(
-                              fontSize: 11.5,
+                              fontSize: 13,
                               color: Colors.white.withValues(alpha: 0.45),
                             ),
                           ),

@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, Dict
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Literal
 
 class DiaryEntry(BaseModel):
     entry_id: str
@@ -27,13 +27,41 @@ class SensorData(BaseModel):
     distraction_duration: int = 0
     app_switch_count: int = 0
     gps_location: str = ""
-    calendar_match: int = 0
+    # 1 = event found, 0 = checked and none found, -1 = not checked
+    calendar_match: int = -1
     facial_emotion: Optional[dict] = None
     # Per-app source breakdown for the verified totals above — display only,
     # not used by the classifier or the PAS formula.
     educational_breakdown: Dict[str, float] = {}
     entertainment_breakdown: Dict[str, float] = {}
     social_media_breakdown: Dict[str, float] = {}
+
+class LocationRequest(BaseModel):
+    name: str
+    lat: float
+    lng: float
+    radius_m: float
+
+class MoodResetRequest(BaseModel):
+    entry_id: str = ""
+    before_stress: float
+    before_mood: str = ""
+    after_facial: Optional[dict] = None
+    duration_seconds: int = 0
+    rounds_completed: int = 0
+    # Research-study fields. Self-reported stress is the ground truth the
+    # facial stress score is validated against (1 = very calm, 5 = very stressed).
+    self_before: Optional[int] = Field(default=None, ge=1, le=5)
+    self_after: Optional[int] = Field(default=None, ge=1, le=5)
+    # "breathing" = guided 4-7-8; "control" = quiet rest of the same length.
+    condition: Literal["breathing", "control"] = "breathing"
+    study_mode: bool = False
+
+
+class ConsentRequest(BaseModel):
+    agreed: bool
+    version: str = "v1"
+    study_mode: bool = False
 
 class BiasAnalysisRequest(BaseModel):
     diary_entry: DiaryEntry

@@ -4,4 +4,10 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Development only: Android blocks plain http:// by default, and the
+         app reaches the laptop's backend at http://<laptop-ip>:8000 while it
+         is being tested on a phone. Release builds do not include this file,
+         so they keep Android's default of blocking cleartext traffic. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

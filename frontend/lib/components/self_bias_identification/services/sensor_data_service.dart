@@ -170,10 +170,12 @@ class SensorDataService {
 
     if (!Platform.isAndroid) {
       // app_usage only works on Android; return zeros elsewhere (e.g. web/dev testing)
+      // 0.0, not 0: collectAll() reads the minutes back as doubles, and an int
+      // here made every analysis fail with a type error on Windows.
       return {
-        'social_media_minutes': 0,
-        'entertainment_minutes': 0,
-        'verified_educational_minutes': 0,
+        'social_media_minutes': 0.0,
+        'entertainment_minutes': 0.0,
+        'verified_educational_minutes': 0.0,
         'app_switch_count': 0,
         'educational_breakdown': <String, double>{},
         'entertainment_breakdown': <String, double>{},
@@ -325,15 +327,16 @@ class SensorDataService {
   /// claimed activity's time window. Opt-in only (see
   /// [CalendarSettingsService]) — never requests calendar permission
   /// unless the student has explicitly enabled verification in Profile.
-  /// Any failure (permission denied, no calendars, plugin error) falls
-  /// back to 0, matching prior behaviour.
+  /// Returns 1 (overlapping event found), 0 (checked, none found) or -1
+  /// (not checked: feature off, permission denied, no calendars, or a plugin
+  /// error). The backend does not treat -1 as a mismatch.
   static Future<int> _getCalendarMatch({
     required DateTime claimedStart,
     required DateTime claimedEnd,
   }) async {
     try {
       final enabled = await CalendarSettingsService.isEnabled();
-      if (!enabled) return 0;
+      if (!enabled) return -1;
 
       final plugin = DeviceCalendarPlugin();
 
@@ -341,11 +344,11 @@ class SensorDataService {
       if (permission.data != true) {
         permission = await plugin.requestPermissions();
       }
-      if (permission.data != true) return 0;
+      if (permission.data != true) return -1;
 
       final calendarsResult = await plugin.retrieveCalendars();
       final calendars = calendarsResult.data;
-      if (!calendarsResult.isSuccess || calendars == null) return 0;
+      if (!calendarsResult.isSuccess || calendars == null) return -1;
 
       for (final calendar in calendars) {
         if (calendar.id == null) continue;
@@ -372,7 +375,7 @@ class SensorDataService {
       }
       return 0;
     } catch (e) {
-      return 0;
+      return -1;
     }
   }
 
@@ -394,7 +397,7 @@ class SensorDataService {
     final calendarMatch = (claimedStart != null && claimedEnd != null)
         ? await _getCalendarMatch(
             claimedStart: claimedStart, claimedEnd: claimedEnd)
-        : 0;
+        : -1;
 
     return {
       'verified_educational_minutes': usage['verified_educational_minutes'],

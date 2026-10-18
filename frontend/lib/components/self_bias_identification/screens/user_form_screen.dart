@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:frontend/components/self_bias_identification/screens/bias_result_screen.dart';
 import 'package:frontend/app_state.dart';
@@ -8,6 +7,8 @@ import 'package:frontend/components/self_bias_identification/services/sensor_dat
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:frontend/components/self_bias_identification/services/privacy_helper.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
 
 class BiasFormScreen extends StatefulWidget {
   final Map<String, dynamic>? facialResult;
@@ -378,7 +379,7 @@ if (_facialEmotionResult != null) ...[
               Text(
                 'Facial scan captured',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: textPrimary,
                 ),
@@ -387,7 +388,7 @@ if (_facialEmotionResult != null) ...[
               Text.rich(
                 TextSpan(
                   text: 'Mood detected: ',
-                  style: TextStyle(fontSize: 12, color: textSecondary),
+                  style: TextStyle(fontSize: 14, color: textSecondary),
                   children: [
                     TextSpan(
                       text: _facialEmotionResult!['dominant_emotion'] ?? '',
@@ -411,7 +412,7 @@ if (_facialEmotionResult != null) ...[
           child: Text(
             '${(((_facialEmotionResult!['confidence'] ?? 0) as num) * 100).round()}%',
             style: const TextStyle(
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
               color: Colors.white,
             ),
@@ -435,14 +436,14 @@ _sectionLabel('Section 4 — Final Details', primary),
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: primary.withOpacity(0.1),
+                              color: primary.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
                               'AI extracts insights',
                               style: TextStyle(
                                 color: primary,
-                                fontSize: 12,
+                                fontSize: 14,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -540,7 +541,7 @@ _sectionLabel('Section 4 — Final Details', primary),
         Text(
           text.toUpperCase(),
           style: GoogleFonts.outfit(
-            fontSize: 13,
+            fontSize: 15,
             fontWeight: FontWeight.w600,
             color: textSecondary,
             letterSpacing: 0.8,
@@ -617,7 +618,7 @@ _sectionLabel('Section 4 — Final Details', primary),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: isActive ? primary.withOpacity(0.12) : surface,
+              color: isActive ? primary.withValues(alpha: 0.12) : surface,
               borderRadius: BorderRadius.circular(30),
               border: Border.all(color: isActive ? primary : borderColor),
             ),
@@ -651,7 +652,7 @@ _sectionLabel('Section 4 — Final Details', primary),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(fontSize: 12, color: textSecondary)),
+            Text(label, style: TextStyle(fontSize: 14, color: textSecondary)),
             const SizedBox(height: 4),
             Text(
               time.format(context),
@@ -671,13 +672,13 @@ _sectionLabel('Section 4 — Final Details', primary),
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF14B8A6).withOpacity(0.15),
+        color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         'Duration: $_durationText (auto)',
         style: const TextStyle(
-          fontSize: 13,
+          fontSize: 15,
           color: Color(0xFF14B8A6),
           fontWeight: FontWeight.w500,
         ),
@@ -715,7 +716,7 @@ _sectionLabel('Section 4 — Final Details', primary),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: isActive ? primary.withOpacity(0.12) : surface,
+              color: isActive ? primary.withValues(alpha: 0.12) : surface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: isActive ? primary : borderColor),
             ),
@@ -755,7 +756,7 @@ _sectionLabel('Section 4 — Final Details', primary),
               margin: const EdgeInsets.symmetric(horizontal: 4),
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(
-                color: isActive ? color.withOpacity(0.12) : surface,
+                color: isActive ? color.withValues(alpha: 0.12) : surface,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: isActive ? color : borderColor),
               ),
@@ -766,7 +767,7 @@ _sectionLabel('Section 4 — Final Details', primary),
                   Text(
                     level,
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       color: isActive ? color : textSecondary,
                       fontWeight: FontWeight.w500,
                     ),
@@ -809,7 +810,7 @@ _sectionLabel('Section 4 — Final Details', primary),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: isActive ? color.withOpacity(0.1) : surface,
+              color: isActive ? color.withValues(alpha: 0.1) : surface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: isActive ? color : borderColor),
             ),
@@ -820,7 +821,7 @@ _sectionLabel('Section 4 — Final Details', primary),
                 Text(
                   text,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 15,
                     color: isActive ? color : textSecondary,
                   ),
                 ),
@@ -865,7 +866,7 @@ _sectionLabel('Section 4 — Final Details', primary),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isActive ? primary.withOpacity(0.12) : surface,
+              color: isActive ? primary.withValues(alpha: 0.12) : surface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: isActive ? primary : borderColor),
             ),
@@ -876,7 +877,7 @@ _sectionLabel('Section 4 — Final Details', primary),
                 Text(
                   mood,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 14,
                     color: isActive ? primary : textSecondary,
                   ),
                 ),
@@ -1016,7 +1017,7 @@ _sectionLabel('Section 4 — Final Details', primary),
       
 
 
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiService.baseUrl}/api/bias/analyze'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -1051,7 +1052,7 @@ _sectionLabel('Section 4 — Final Details', primary),
             'educational_breakdown': autoSensorData['educational_breakdown'],
             'entertainment_breakdown': autoSensorData['entertainment_breakdown'],
             'social_media_breakdown': autoSensorData['social_media_breakdown'],
-            'facial_emotion': _facialEmotionResult,
+            'facial_emotion': withoutFaceImage(_facialEmotionResult),
           },
         }),
       );

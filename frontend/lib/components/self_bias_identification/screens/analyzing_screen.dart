@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:frontend/app_state.dart';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
 import 'package:frontend/components/self_bias_identification/services/sensor_data_service.dart';
 import 'package:frontend/components/self_bias_identification/screens/bias_result_screen.dart';
+import 'package:frontend/components/self_bias_identification/screens/face_check_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/no_diary_entry_screen.dart';
 import 'package:frontend/components/self_bias_identification/widgets/gradient_ring_painter.dart';
+import 'package:frontend/components/self_bias_identification/services/privacy_helper.dart';
+import 'package:frontend/components/self_bias_identification/services/data_refresh.dart';
+import 'package:frontend/components/self_bias_identification/widgets/app_toast.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
 
 /// Shown from the moment Facial Capture's "Continue" is tapped until the
 /// real API response lands — replaces the old pop-then-push-with-SnackBar
@@ -25,31 +28,34 @@ class AnalyzingScreen extends StatefulWidget {
 
 class _AnalyzingScreenState extends State<AnalyzingScreen>
     with TickerProviderStateMixin {
-  static const _steps = [
+  // The wording matches what is really happening. A bias analysis has these
+  // steps; a face-only check has no classifier and no reflection.
+  static const _biasSteps = [
     'Fetching your diary entry',
     'Comparing claimed vs verified',
     'Running bias classifier',
     'Generating your reflection',
   ];
+  static const _faceSteps = [
+    'Reading your scan',
+    'Checking your latest diary entry',
+    'Preparing your face check',
+  ];
+
+  static const _green = Color(0xFF35E47B);
+
+  List<String> _steps = _biasSteps;
+  String _title = 'Analyzing your entry';
+  String _subtitle = 'Usually takes a few seconds';
 
   int _stepIndex = 0;
   int _elapsedMs = 0;
   late final Timer _stepTimer;
   late final Timer _elapsedTimer;
-  late final AnimationController _spinController;
-  late final AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
-    _spinController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
     _elapsedTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (mounted) setState(() => _elapsedMs += 100);
     });
@@ -66,8 +72,6 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
 
   @override
   void dispose() {
-    _spinController.dispose();
-    _pulseController.dispose();
     _stepTimer.cancel();
     _elapsedTimer.cancel();
     super.dispose();
@@ -75,11 +79,42 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
 
   Future<void> _runAnalysis() async {
     try {
+      // With a good face scan, first ask whether there is anything new to
+      // analyse. If not, this is only a face check, so say so and skip the
+      // bias analysis (and the sensor reading it needs) altogether.
+      final face = withoutFaceImage(widget.facialResult);
+      if (face != null && face['status'] == 'success') {
+        final state = await ApiService.diaryState(AppState.userId);
+        if (!mounted) return;
+        if (state != null && state != 'new') {
+          setState(() {
+            _steps = _faceSteps;
+            _title = 'Checking your scan';
+            _subtitle = 'Just a moment';
+            _stepIndex = 0;
+          });
+          final reason = switch (state) {
+            'stale' => 'stale',
+            'analyzed' => 'analyzed',
+            _ => 'none',
+          };
+          if (await _openFaceCheck(reason)) return;
+          if (!mounted) return;
+          // The face check could not be made: carry on with the usual route.
+          setState(() {
+            _steps = _biasSteps;
+            _title = 'Analyzing your entry';
+            _subtitle = 'Usually takes a few seconds';
+            _stepIndex = 0;
+          });
+        }
+      }
+
       final sensorData = await SensorDataService.collectAll(
         userId: AppState.userId,
       );
 
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse(
           '${ApiService.baseUrl}/api/bias/analyze-from-diary/${AppState.userId}',
         ),
@@ -87,7 +122,7 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
         body: jsonEncode({
           'sensor_data': {
             ...sensorData,
-            'facial_emotion': widget.facialResult,
+            'facial_emotion': withoutFaceImage(widget.facialResult),
           },
         }),
       );
@@ -95,19 +130,59 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
       if (!mounted) return;
 
       if (response.statusCode != 200) {
-        _failAndPop('Server error: ${response.statusCode}');
+        _failAndPop(
+          'The server had a problem (code ${response.statusCode}). Please try again.',
+        );
         return;
       }
 
       final result = jsonDecode(response.body);
 
-      if (result['status'] == 'no_entry_found') {
+      final status = result['status'];
+
+      // Nothing new to compare with: no entry at all, or the latest entry is
+      // too old for the phone's recent data. A good face scan still gives Mood
+      // Support, so show that rather than a dead end or a misleading result.
+      if (status == 'no_entry_found') {
+        if (await _openFaceCheck(result['reason'] == 'stale' ? 'stale' : 'none')) {
+          return;
+        }
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const NoDiaryEntryScreen()),
+          MaterialPageRoute(
+            builder: (_) =>
+                NoDiaryEntryScreen(tooOld: result['reason'] == 'stale'),
+          ),
         );
         return;
       }
+
+      // The latest diary entry was analysed before, so there is nothing new to
+      // analyse. With a face scan, show the face check; without one, show the
+      // saved result rather than storing a duplicate.
+      if (status == 'already_analyzed' && result['result'] is Map) {
+        if (await _openFaceCheck('analyzed')) return;
+        if (!mounted) return;
+        AppToast.info(
+          context,
+          'This diary entry was already analyzed. Showing the saved result. '
+          'Add a new entry to analyze again.',
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BiasResultScreen(
+              result: Map<String, dynamic>.from(result['result'] as Map),
+            ),
+          ),
+        );
+        return;
+      }
+
+      // The new result is saved; screens already in the stack reload now,
+      // because the scan screen's Future completed when it was replaced.
+      DataRefresh.notify();
 
       Navigator.pushReplacement(
         context,
@@ -115,15 +190,36 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      _failAndPop('Connection error: $e');
+      _failAndPop(AppToast.friendlyError(e));
     }
   }
 
-  void _failAndPop(String message) {
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+  /// Opens the Face check for a usable face scan. Returns false when there is
+  /// no usable scan (nothing was opened).
+  Future<bool> _openFaceCheck(String reason) async {
+    final face = withoutFaceImage(widget.facialResult);
+    if (face == null || face['status'] != 'success') return false;
+    final check = await ApiService.faceCheck(AppState.userId, face);
+    if (!mounted || check == null) return false;
+    DataRefresh.notify();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FaceCheckScreen(
+          facial: Map<String, dynamic>.from(check['facial_emotion'] as Map),
+          moodSupport: Map<String, dynamic>.from(check['mood_support'] as Map),
+          entryId: check['entry_id']?.toString() ?? '',
+          reason: reason,
+        ),
+      ),
     );
+    return true;
+  }
+
+  void _failAndPop(String message) {
+    // Shown on the app-level messenger, so it stays visible after the pop.
+    AppToast.error(context, message);
+    Navigator.pop(context);
   }
 
   @override
@@ -131,214 +227,181 @@ class _AnalyzingScreenState extends State<AnalyzingScreen>
     final elapsed = (_elapsedMs / 1000).toStringAsFixed(1);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF070812),
+      backgroundColor: const Color(0xFF070B12),
       body: Stack(
         children: [
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(-0.2, -0.7),
-                    radius: 1.3,
-                    colors: [
-                      const Color(0xFF35E47B).withValues(alpha: 0.16),
-                      Colors.transparent,
-                    ],
-                  ),
+                  
                 ),
               ),
             ),
           ),
           Center(
-            child: Container(
-              width: 264,
-              padding: const EdgeInsets.fromLTRB(24, 30, 24, 24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.08),
-                    Colors.white.withValues(alpha: 0.02),
-                  ],
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.fromLTRB(26, 34, 26, 28),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D131D),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
                 ),
-                borderRadius: BorderRadius.circular(26),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    blurRadius: 60,
-                    offset: const Offset(0, 28),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 128,
-                    height: 128,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        AnimatedBuilder(
-                          animation: _spinController,
-                          builder: (context, child) => Transform.rotate(
-                            angle: _spinController.value * 2 * math.pi,
-                            child: child,
-                          ),
-                          child: CustomPaint(
-                            size: const Size(128, 128),
-                            painter: const GradientRingPainter(
-                              progress: 0.25,
-                              colors: [Color(0xFF35E47B), Color(0xFF6FE07E)],
-                              strokeWidth: 3,
-                              glowDot: true,
-                            ),
-                          ),
-                        ),
-                        AnimatedBuilder(
-                          animation: _pulseController,
-                          builder: (context, child) => Transform.scale(
-                            scale: 1 + 0.08 * _pulseController.value,
-                            child: child,
-                          ),
-                          child: const Icon(
-                            Icons.visibility_rounded,
-                            size: 36,
-                            color: Color(0xFF35E47B),
-                          ),
-                        ),
-                        Positioned(
-                          bottom: -4,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0A0E14),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.08),
-                              ),
-                            ),
-                            child: Text(
-                              '${elapsed}s',
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 9.5,
-                                color: Colors.white.withValues(alpha: 0.4),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  Text(
-                    'Analyzing your entry',
-                    style: GoogleFonts.outfit(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  const Text(
-                    'Usually takes a few seconds',
-                    style: TextStyle(fontSize: 10.5, color: Colors.white38),
-                  ),
-                  const SizedBox(height: 20),
-                  ...List.generate(_steps.length, (i) {
-                    final done = i < _stepIndex;
-                    final active = i == _stepIndex;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 156,
+                      height: 156,
+                      child: Stack(
+                        alignment: Alignment.center,
                         children: [
-                          Container(
-                            width: 19,
-                            height: 19,
-                            decoration: BoxDecoration(
-                              color: done
-                                  ? const Color(0xFF4ADE80).withValues(alpha: 0.2)
-                                  : active
-                                      ? const Color(0xFF35E47B).withValues(alpha: 0.2)
-                                      : Colors.white.withValues(alpha: 0.05),
-                              shape: BoxShape.circle,
-                              border: done || active
-                                  ? null
-                                  : Border.all(
-                                      color: Colors.white.withValues(alpha: 0.08),
-                                    ),
+                          // Static ring that fills with the steps (no spinning).
+                          CustomPaint(
+                            size: const Size(156, 156),
+                            painter: GradientRingPainter(
+                              progress: (_stepIndex + 1) / _steps.length,
+                              colors: const [_green, _green],
+                              strokeWidth: 6,
+                              glowDot: false,
                             ),
-                            child: done
-                                ? const Icon(
-                                    Icons.check,
-                                    size: 11,
-                                    color: Color(0xFF4ADE80),
-                                  )
-                                : active
-                                    ? const Padding(
-                                        padding: EdgeInsets.all(6),
-                                        child: Icon(
-                                          Icons.circle,
-                                          size: 6,
-                                          color: Color(0xFF35E47B),
-                                        ),
-                                      )
-                                    : null,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _steps[i],
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight:
-                                    active ? FontWeight.w700 : FontWeight.w400,
-                                color: active
-                                    ? Colors.white
-                                    : Colors.white.withValues(
-                                        alpha: done ? 0.7 : 0.32,
-                                      ),
+                          const Icon(
+                            Icons.visibility_rounded,
+                            size: 46,
+                            color: _green,
+                          ),
+                          Positioned(
+                            bottom: -6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 11,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF151C27),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                ),
+                              ),
+                              child: Text(
+                                '${elapsed}s',
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white70,
+                                ),
                               ),
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }),
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    height: 3,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(3),
-                      color: Colors.white.withValues(alpha: 0.08),
                     ),
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: (_stepIndex + 1) / _steps.length,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(3),
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF35E47B), Color(0xFF6FE07E)],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF35E47B).withValues(alpha: 0.5),
-                              blurRadius: 8,
+                    const SizedBox(height: 28),
+                    Text(
+                      _title,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _subtitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white60,
+                      ),
+                    ),
+                    const SizedBox(height: 26),
+                    ...List.generate(_steps.length, (i) {
+                      final done = i < _stepIndex;
+                      final active = i == _stepIndex;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Row(
+                          children: [
+                            Container(
+                              key: Key('step-$i'),
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                // Done: solid green. Now: a green ring. Next: a grey ring.
+                                color: done ? _green : const Color(0xFF151C27),
+                                shape: BoxShape.circle,
+                                border: done
+                                    ? null
+                                    : Border.all(
+                                        color: active
+                                            ? _green
+                                            : Colors.white.withValues(alpha: 0.22),
+                                        width: 2,
+                                      ),
+                              ),
+                              child: done
+                                  ? const Icon(
+                                      Icons.check_rounded,
+                                      size: 17,
+                                      color: Color(0xFF04231A),
+                                    )
+                                  : active
+                                      ? const Center(
+                                          child: Icon(
+                                            Icons.circle,
+                                            size: 9,
+                                            color: _green,
+                                          ),
+                                        )
+                                      : null,
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                _steps[i],
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  height: 1.25,
+                                  fontWeight:
+                                      active ? FontWeight.w800 : FontWeight.w600,
+                                  color: (active || done)
+                                      ? Colors.white
+                                      : Colors.white38,
+                                ),
+                              ),
                             ),
                           ],
                         ),
+                      );
+                    }),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 6,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        color: const Color(0xFF1C2430),
+                      ),
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: (_stepIndex + 1) / _steps.length,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            color: _green,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:frontend/app_state.dart';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
 import 'package:frontend/components/self_bias_identification/screens/analyzing_screen.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
 
 /// TESTING ONLY. Writes a document into the team's shared `diaryEntries`
 /// collection using the group leader's exact schema (camelCase field
@@ -118,7 +118,7 @@ class _TestDiaryEntryScreenState extends State<TestDiaryEntryScreen> {
     };
 
     try {
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiService.baseUrl}/api/bias/test-create-diary-entry'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(entry),
@@ -159,7 +159,7 @@ class _TestDiaryEntryScreenState extends State<TestDiaryEntryScreen> {
         content: const Text(
           'Written to the shared diaryEntries collection. Continue to run '
           'the facial-check + bias analysis on this entry?',
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+          style: TextStyle(color: Colors.white70, fontSize: 15, height: 1.4),
         ),
         actions: [
           TextButton(
@@ -224,7 +224,7 @@ class _TestDiaryEntryScreenState extends State<TestDiaryEntryScreen> {
                 'TEST ONLY — writes directly into the shared diaryEntries '
                 'collection, in the same schema the leader\'s real form '
                 'produces. A real user fills this in via that app instead.',
-                style: TextStyle(color: Color(0xFFFFB74D), fontSize: 11.5, height: 1.4),
+                style: TextStyle(color: Color(0xFFFFB74D), fontSize: 13, height: 1.4),
               ),
             ),
 
@@ -248,7 +248,7 @@ class _TestDiaryEntryScreenState extends State<TestDiaryEntryScreen> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 'Duration: $_duration  ·  $_timePeriod  (auto)',
-                style: const TextStyle(color: Color(0xFF1DB954), fontSize: 11),
+                style: const TextStyle(color: Color(0xFF1DB954), fontSize: 13),
               ),
             ),
             const SizedBox(height: 16),
@@ -320,17 +320,17 @@ class _TestDiaryEntryScreenState extends State<TestDiaryEntryScreen> {
 
   Widget _label(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 7),
-        child: Text(text, style: const TextStyle(color: Color(0xFFc0c0d8), fontSize: 13)),
+        child: Text(text, style: const TextStyle(color: Color(0xFFc0c0d8), fontSize: 15)),
       );
 
   Widget _textField(TextEditingController c, String hint, {int maxLines = 1}) {
     return TextField(
       controller: c,
       maxLines: maxLines,
-      style: const TextStyle(color: Colors.white, fontSize: 13),
+      style: const TextStyle(color: Colors.white, fontSize: 15),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF4a4a6a), fontSize: 13),
+        hintStyle: const TextStyle(color: Color(0xFF4a4a6a), fontSize: 15),
         filled: true,
         fillColor: const Color(0xFF13132A),
         border: OutlineInputBorder(
@@ -367,7 +367,7 @@ class _TestDiaryEntryScreenState extends State<TestDiaryEntryScreen> {
             child: Text(
               opt,
               style: TextStyle(
-                fontSize: 12.5,
+                fontSize: 14,
                 color: isSelected ? const Color(0xFF7B61FF) : const Color(0xFF9999bb),
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
               ),
@@ -391,7 +391,7 @@ class _TestDiaryEntryScreenState extends State<TestDiaryEntryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: const TextStyle(color: Color(0xFF5a5a7a), fontSize: 10)),
+            Text(label, style: const TextStyle(color: Color(0xFF5a5a7a), fontSize: 12)),
             const SizedBox(height: 4),
             Text(_fmt(time), style: const TextStyle(color: Colors.white, fontSize: 14)),
           ],
