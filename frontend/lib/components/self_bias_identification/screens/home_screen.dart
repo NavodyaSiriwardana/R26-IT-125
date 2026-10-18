@@ -6,7 +6,10 @@ import 'package:frontend/components/self_bias_identification/widgets/tilt_card.d
 import 'package:frontend/components/self_bias_identification/screens/bias_result_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/weekly_trends_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/recommendations_screen.dart';
-import 'package:frontend/components/self_bias_identification/screens/user_form_screen.dart';
+import 'package:frontend/components/self_bias_identification/screens/all_entries_screen.dart'
+    as all_entries;
+import 'package:frontend/components/temporal_causal_patterns/screens/new_entry_screen.dart'
+    as temporal;
 import 'package:frontend/components/self_bias_identification/screens/profile_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/bias_history_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/facial_capture_screen.dart';
@@ -56,7 +59,6 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Color _textSecondary = Color(0xFFA5AFBE);
   static const Color _textMuted = Color(0xFF738093);
 
-  // Glass-card decoration shared by every panel on this screen.
   BoxDecoration _glassDecoration({
     double radius = 20,
     Color borderColor = const Color(0x17FFFFFF),
@@ -79,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _verifiedEdu = 0;
   int _appSwitches = 0;
   int _socialMedia = 0;
+  bool _isStudyCategory = true;
   String _claimedLocation = '';
   String _actualLocation = '';
   String _moodBefore = '';
@@ -219,14 +222,14 @@ class _HomeScreenState extends State<HomeScreen> {
   /// The team's shared diary template is the single place entries are written,
   /// and Bias Detection is opened from it, so "go to the diary" means going
   /// back there. Run on its own (nothing to go back to), it opens this
-  /// component's local entry form instead.
+  /// team's new-entry screen instead.
   void _openDiary() {
     if (Navigator.canPop(context)) {
       Navigator.pop(context);
     } else {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const BiasFormScreen()),
+        MaterialPageRoute(builder: (_) => const temporal.NewEntryScreen()),
       ).then((_) => _loadData());
     }
   }
@@ -502,6 +505,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _verifiedEdu = _asInt(comparison['verified_educational']);
             _appSwitches = _asInt(comparison['app_switches']);
             _socialMedia = _asInt(comparison['social_media_minutes']);
+            _isStudyCategory = comparison['is_study_category'] as bool? ?? true;
             _claimedLocation = comparison['claimed_location'] ?? '';
             _actualLocation = comparison['actual_location'] ?? '';
             _moodBefore = comparison['mood_before'] ?? '';
@@ -536,11 +540,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final bool isAccurate =
         _biasType == 'accurate_perception' || _latestPas >= 70;
 
-    final Color pasColor = isAccurate
-        ? _green
-        : _latestPas >= 50
-        ? _orange
-        : _red;
+    final Color pasColor = _levelColor(
+      _pasLevel,
+      isAccurate
+          ? _green
+          : _latestPas >= 50
+              ? _orange
+              : _red,
+    );
 
     return Scaffold(
       backgroundColor: _background,
@@ -926,6 +933,62 @@ class _HomeScreenState extends State<HomeScreen> {
       // ============================================================
 
       bottomNavigationBar: _buildFloatingNav(context),
+      floatingActionButton: _newEntryFab(context),
+    );
+  }
+
+  // Stays pinned bottom-right regardless of scroll position (Scaffold's
+  // floatingActionButton, not part of the scrolling body) — a fast path
+  // to start a diary entry without going through the bottom nav's "+"
+  // (which starts facial capture for an entry already submitted).
+  Widget _newEntryFab(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(30),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(30),
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const temporal.NewEntryScreen(),
+              ),
+            ).then((_) => _loadData());
+          },
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+            decoration: BoxDecoration(
+              color: _green,
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: _green.withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.edit_note_rounded, color: Color(0xFF04231A), size: 22),
+                SizedBox(width: 8),
+                Text(
+                  'New Entry',
+                  style: TextStyle(
+                    color: Color(0xFF04231A),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -952,7 +1015,13 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icons.menu_book_outlined,
               label: 'Diary',
               selected: false,
-              onTap: _openDiary,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const all_entries.AllEntriesScreen()),
+                ).then((_) => _loadData());
+              },
             ),
             GestureDetector(
               onTap: () {
@@ -1434,6 +1503,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // ================================================================
 
   ({String label, Color color}) _durationGapBand() {
+    if (!_isStudyCategory) return (label: 'N/A', color: _green);
     final ratio = _claimedDuration > 0 ? (_verifiedEdu / _claimedDuration) : 1.0;
     if (ratio >= 0.8) return (label: 'GOOD', color: _green);
     if (ratio >= 0.5) return (label: 'MODERATE', color: _orange);
@@ -1448,6 +1518,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   ({String label, Color color}) _socialMediaBand() {
+    if (!_isStudyCategory) return (label: 'N/A', color: _green);
     return _verifiedEdu > _socialMedia
         ? (label: 'GOOD', color: _green)
         : (label: 'ABOVE STUDY', color: _red);
@@ -2133,30 +2204,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// "Today's overview" only when the latest entry is actually from
-  /// today — otherwise says which day it's really from, so the score
-  /// card never implies fresher data than it's showing.
-  String get _overviewLabel {
-    if (_latestEntry == null) return "Today's overview";
-    final entryId = _latestEntry!['entry_id']?.toString() ?? '';
-    final ts = entryTimestampMs(entryId);
-    if (ts == null) return "Today's overview";
-
-    final entryDate = DateTime.fromMillisecondsSinceEpoch(ts);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final entryDay = DateTime(entryDate.year, entryDate.month, entryDate.day);
-    final diffDays = today.difference(entryDay).inDays;
-
-    if (diffDays == 0) return "Today's overview";
-    if (diffDays == 1) return "Yesterday's overview";
-
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${months[entryDate.month - 1]} ${entryDate.day} overview';
-  }
+  /// The card always shows a single entry (whichever was submitted most
+  /// recently) rather than an aggregate of the day, so "Last entry" stays
+  /// accurate regardless of which day it's from or how many entries a
+  /// student submits in one day.
+  String get _overviewLabel => 'Last entry';
 
   String _formatBiasType(String type) {
     if (type.isEmpty || type == 'accurate_perception') {

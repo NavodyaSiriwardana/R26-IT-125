@@ -24,6 +24,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
   static const _red = Color(0xFFFF6B6B);
   static const _orange = Color(0xFFFFB74D);
   static const _blue = Color(0xFF60A5FA);
+  static const _amber = Color(0xFFFF8A50);
 
   late final AnimationController _entrance;
 
@@ -75,6 +76,26 @@ class _BiasResultScreenState extends State<BiasResultScreen>
     );
   }
 
+  /// Colors the gauge/pill directly off the level text pas_calculator.py
+  /// sends (rather than re-deriving separate score thresholds here), so
+  /// "Moderate Bias" and "Severe Bias" always render as visually distinct
+  /// colors instead of both collapsing onto the same red.
+  static Color _levelColor(String level) {
+    switch (level) {
+      case 'Excellent Alignment':
+      case 'Good Alignment':
+        return _green;
+      case 'Mild Bias':
+        return _orange;
+      case 'Moderate Bias':
+        return _amber;
+      case 'Severe Bias':
+        return _red;
+      default:
+        return _orange;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final result = widget.result;
@@ -92,11 +113,7 @@ class _BiasResultScreenState extends State<BiasResultScreen>
     final streakCount = (result['streak_count'] as num?)?.toInt() ?? 1;
 
     final bool isAccurate = biasType == 'accurate_perception';
-    final pasColor = pasScore >= 70
-        ? _green
-        : pasScore >= 50
-        ? _orange
-        : _red;
+    final pasColor = _levelColor(pasLevel.toString());
     final badgeColor = isAccurate ? _green : _red;
 
     final entryAge = (result['entry_age_hours'] as num?)?.toDouble();

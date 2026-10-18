@@ -1,6 +1,9 @@
+import os
 from transformers import pipeline
 from PIL import Image
 import mediapipe as mp
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 import numpy as np
 import io
 import base64
@@ -17,44 +20,80 @@ emotion_classifier = pipeline(
     model="dima806/facial_emotions_image_detection"
 )
 
-mp_face_detection = mp.solutions.face_detection
-face_detector = mp_face_detection.FaceDetection(
-    model_selection=0, min_detection_confidence=0.6
+# Tasks API replaces the legacy mp.solutions.* API removed in mediapipe>=0.10.30
+# (see STUDY_CATEGORIES-style comment in comparator.py history — this swap was
+# required to unblock numpy>=2, which shap/ortools in this shared backend need
+# and the old mp.solutions.* build could never support).
+_MODELS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "ml_models", "mediapipe_models",
 )
 
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    static_image_mode=True, max_num_faces=1, min_detection_confidence=0.6
+_face_detector = mp_vision.FaceDetector.create_from_options(
+    mp_vision.FaceDetectorOptions(
+        base_options=mp_python.BaseOptions(
+            model_asset_path=os.path.join(_MODELS_DIR, "blaze_face_short_range.tflite")
+        ),
+        min_detection_confidence=0.6,
+    )
 )
+
+_face_landmarker = mp_vision.FaceLandmarker.create_from_options(
+    mp_vision.FaceLandmarkerOptions(
+        base_options=mp_python.BaseOptions(
+            model_asset_path=os.path.join(_MODELS_DIR, "face_landmarker.task")
+        ),
+        num_faces=1,
+    )
+)
+
+
+# Sentinel returned by detect_and_crop_face when more than one prominent
+# face is found, distinguishing it from the "no face at all" (None) case.
+MULTIPLE_FACES = "MULTIPLE_FACES_DETECTED"
 
 
 def face_confidence(image: Image.Image) -> float:
     """How sure the face detector is that this picture holds a face (0 if none)."""
-    results = face_detector.process(np.array(image.convert("RGB")))
+    mp_image = mp.Image(
+        image_format=mp.ImageFormat.SRGB,
+        data=np.array(image.convert("RGB")),
+    )
+    results = _face_detector.detect(mp_image)
     if not results.detections:
         return 0.0
-    return max(d.score[0] for d in results.detections)
+    return max(d.categories[0].score for d in results.detections)
 
 
 def detect_and_crop_face(image: Image.Image):
     img_array = np.array(image.convert("RGB"))
     h, w, _ = img_array.shape
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_array)
 
-    results = face_detector.process(img_array)
+    results = _face_detector.detect(mp_image)
     if not results.detections:
         return None, False
 
-    detection = max(
-    results.detections,
-    key=lambda d: d.location_data.relative_bounding_box.width
-    * d.location_data.relative_bounding_box.height
-)
-    bbox = detection.location_data.relative_bounding_box
+    # BoundingBox fields are already absolute pixel coordinates in the
+    # Tasks API (unlike the old relative_bounding_box, which was 0-1).
+    areas = [d.bounding_box.width * d.bounding_box.height for d in results.detections]
+    largest_area = max(areas)
 
-    x = max(0, int(bbox.xmin * w))
-    y = max(0, int(bbox.ymin * h))
-    bw = int(bbox.width * w)
-    bh = int(bbox.height * h)
+    # A second face only counts as a real "someone else is in frame" case
+    # if it's a comparable size to the main face — a small face far in the
+    # background (a photo on the wall, someone walking past) shouldn't
+    # reject an otherwise valid selfie.
+    significant_faces = sum(1 for a in areas if a >= 0.35 * largest_area)
+    if significant_faces > 1:
+        return MULTIPLE_FACES, False
+
+    detection = results.detections[areas.index(largest_area)]
+    bbox = detection.bounding_box
+
+    x = max(0, bbox.origin_x)
+    y = max(0, bbox.origin_y)
+    bw = bbox.width
+    bh = bbox.height
 
     margin_x = int(0.25 * bw)
     margin_y = int(0.25 * bh)
@@ -65,8 +104,8 @@ def detect_and_crop_face(image: Image.Image):
 
     cropped = img_array[y1:y2, x1:x2]
 
-    mesh_results = face_mesh.process(img_array)
-    landmarks_visible = mesh_results.multi_face_landmarks is not None
+    landmark_results = _face_landmarker.detect(mp_image)
+    landmarks_visible = len(landmark_results.face_landmarks) > 0
 
     return Image.fromarray(cropped), landmarks_visible
 
@@ -102,6 +141,12 @@ def analyze_facial_expression(image_base64: str):
         image = choose_orientation(image, face_confidence)
 
         face_image, landmarks_visible = detect_and_crop_face(image)
+
+        if face_image == MULTIPLE_FACES:
+            return {
+                "status": "multiple_faces_detected",
+                "message": "More than one face was detected in the frame. Please make sure only you are visible, then retake the photo."
+            }
 
         if face_image is None:
             return {

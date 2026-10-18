@@ -10,10 +10,21 @@ from app.components.temporal_causal_patterns.graph_builder import graph_builder
 from app.routes import api_router
 from app.components.self_bias_identification.routes.bias_routes import router as bias_router
 
+from app.config import GENERATION_SETTINGS
+
+
+def _preload_rag_models() -> None:
+    from app.components.rag_summary.hallucination_evaluator import preload_nli_model
+    from app.components.rag_summary.summarizers import preload_summary_model
+
+    preload_summary_model()
+    preload_nli_model()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     initialize_firebase()
+    if GENERATION_SETTINGS.preload_models:
+        _preload_rag_models()
     yield
 
 

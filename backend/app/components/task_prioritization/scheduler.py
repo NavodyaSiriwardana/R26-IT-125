@@ -51,8 +51,12 @@ def _round_up_minutes(value: datetime, interval: int = 10) -> datetime:
 
     return value + timedelta(minutes=interval) - discard
 
-def calculate_break_minutes(duration, cognitive):
-
+def calculate_break_minutes(
+    duration: int,
+    cognitive: float,
+    energy: float,
+) -> int:
+    # Base recovery from task duration.
     if duration <= 30:
         base = 0
     elif duration <= 60:
@@ -66,12 +70,17 @@ def calculate_break_minutes(duration, cognitive):
     else:
         base = 25
 
+    # Cognitive recovery.
     if cognitive >= 0.8:
         base += 5
     elif cognitive >= 0.6:
         base += 2
-    elif cognitive <= 0.3:
-        base -= 5
+
+    # Physical / energy recovery.
+    if energy >= 0.9:
+        base += 10
+    elif energy >= 0.8:
+        base += 5
 
     return max(0, min(base, 30))
 
@@ -79,6 +88,7 @@ def get_break_minutes(
     break_strategy: str,
     duration_minutes: int,
     cognitive_load: float,
+    energy_level: float = 0.5,
 ) -> int:
 
     if break_strategy == "none":
@@ -93,10 +103,11 @@ def get_break_minutes(
     if break_strategy == "fixed_15":
         return 15
 
-    # Default = adaptive
+    # Default = adaptive.
     return calculate_break_minutes(
         duration_minutes,
         cognitive_load,
+        energy_level,
     )
 
 def split_task_duration(
@@ -670,6 +681,9 @@ def generate_schedule(
                     float(
                         first["task"].get("cognitive_load", 0.5)
                     ),
+                    float(
+                        first["task"].get("energy_level", 0.5)
+                    ),
                 )
             )
 
@@ -685,6 +699,9 @@ def generate_schedule(
                     second["duration"],
                     float(
                         second["task"].get("cognitive_load", 0.5)
+                    ),
+                    float(
+                        second["task"].get("energy_level", 0.5)
                     ),
                 )
             )
@@ -1049,6 +1066,7 @@ def generate_schedule(
                 break_strategy,
                 int(current_task["estimated_duration_minutes"]),
                 float(source_task.get("cognitive_load", 0.5)),
+                float(source_task.get("energy_level", 0.5)),
             )
 
         actual_break = min(

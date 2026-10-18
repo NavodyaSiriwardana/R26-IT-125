@@ -3,6 +3,7 @@ import '../services/productivity_analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'daily_reflection_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ProductivityDashboardScreen extends StatefulWidget {
   const ProductivityDashboardScreen({super.key});
@@ -20,8 +21,15 @@ class _ProductivityDashboardScreenState
   void initState() {
     super.initState();
 
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('No authenticated user is currently signed in.');
+    }
+
     _dashboardStream = FirebaseFirestore.instance
         .collection('tasks')
+        .where('userId', isEqualTo: user.uid)
         .snapshots()
         .asyncMap((_) => fetchDashboardData());
   }

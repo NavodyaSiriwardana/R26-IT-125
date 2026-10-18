@@ -193,8 +193,14 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
         _result != null && _result!['status'] == 'blurry_image';
     final bool isLowLight =
         _result != null && _result!['status'] == 'low_light';
-    final bool showWarning =
-        isNoFace || isPartialFace || isBlurryImage || isLowLight;
+    // More than one face: the backend refuses to guess whose stress it is.
+    final bool isMultipleFaces =
+        _result != null && _result!['status'] == 'multiple_faces_detected';
+    final bool showWarning = isNoFace ||
+        isPartialFace ||
+        isBlurryImage ||
+        isLowLight ||
+        isMultipleFaces;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E14),
@@ -618,6 +624,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
     final isNoFace = _result!['status'] == 'no_face_detected';
     final isBlurry = _result!['status'] == 'blurry_image';
     final isLowLight = _result!['status'] == 'low_light';
+    final isMultipleFaces = _result!['status'] == 'multiple_faces_detected';
     final isPartial = _result!['status'] == 'partial_face';
     // Blur and low-light checks run before face detection, so no face
     // verdict exists for those results.
@@ -625,7 +632,10 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
 
     final faceChip = isNoFace
         ? _diagnosticChip(Icons.close, 'No face detected', Colors.redAccent)
-        : _diagnosticChip(Icons.check, 'Face detected', green);
+        : isMultipleFaces
+            ? _diagnosticChip(
+                Icons.close, 'Multiple faces detected', Colors.redAccent)
+            : _diagnosticChip(Icons.check, 'Face detected', green);
 
     final qualityChip = isLowLight
         ? _diagnosticChip(Icons.close, 'Too dark', Colors.orangeAccent)
@@ -650,7 +660,7 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
       runSpacing: 8,
       children: [
         if (faceChecked) faceChip,
-        if (!isNoFace) qualityChip,
+        if (!isNoFace && !isMultipleFaces) qualityChip,
         ?confidenceChip,
       ],
     );

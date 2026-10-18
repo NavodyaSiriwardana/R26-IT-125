@@ -83,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: Color(0xFF7B61FF), width: 1.4),
+        borderSide: const BorderSide(color: Color(0xFF2DD9BE), width: 1.4),
       ),
     );
   }
@@ -107,44 +107,60 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 48),
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF9784FF), Color(0xFF6E56E8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF7B61FF).withValues(alpha: 0.4),
-                        blurRadius: 24,
-                        offset: const Offset(0, 10),
+                const SizedBox(height: 40),
+                Center(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 72,
+                        height: 72,
+                        padding: const EdgeInsets.all(15),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0D1B2A), Color(0xFF1B3A4B)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(22),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF2DD9BE)
+                                  .withValues(alpha: 0.35),
+                              blurRadius: 28,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.auto_stories_rounded,
+                            color: Color(0xFF2DD9BE), size: 32),
+                      ),
+                      const SizedBox(height: 20),
+                      RichText(
+                        text: const TextSpan(
+                          style: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.4,
+                          ),
+                          children: [
+                            TextSpan(
+                                text: 'I',
+                                style: TextStyle(color: Color(0xFF2DD9BE))),
+                            TextSpan(
+                                text: 'Diary',
+                                style: TextStyle(color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      const Text(
+                        'Sign in to discover your patterns',
+                        style: TextStyle(
+                          color: Color(0xFF9C9CC0),
+                          fontSize: 15,
+                        ),
                       ),
                     ],
-                  ),
-                  child: const Icon(Icons.auto_stories_rounded,
-                      color: Colors.white, size: 28),
-                ),
-                const SizedBox(height: 22),
-                const Text(
-                  'Intelligent Diary',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Sign in to discover your patterns',
-                  style: TextStyle(
-                    color: Color(0xFF8888AC),
-                    fontSize: 13.5,
                   ),
                 ),
                 const SizedBox(height: 42),
@@ -230,46 +246,59 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 26),
                 SizedBox(
                   width: double.infinity,
+                  height: 54,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(27),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF7B61FF).withValues(alpha: 0.35),
-                          blurRadius: 22,
-                          offset: const Offset(0, 10),
+                          color: const Color(0xFF7B61FF).withValues(alpha: 0.4),
+                          blurRadius: 24,
+                          offset: const Offset(0, 12),
                         ),
                       ],
                     ),
-                    child: ElevatedButton(
-                      onPressed: _loading ? null : _login,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF7B61FF),
-                        disabledBackgroundColor:
-                            const Color(0xFF7B61FF).withValues(alpha: 0.6),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                    child: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(27),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(27),
+                        onTap: _loading ? null : _login,
+                        child: Ink(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(27),
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF2DD9BE)
+                                    .withValues(alpha: _loading ? 0.6 : 1),
+                                const Color(0xFF7B61FF)
+                                    .withValues(alpha: _loading ? 0.6 : 1),
+                              ],
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                            ),
+                          ),
+                          child: Center(
+                            child: _loading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Sign in',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ),
                         ),
                       ),
-                      child: _loading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Text(
-                              'Sign in',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
                     ),
                   ),
                 ),
@@ -285,7 +314,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: const Text(
                       'No account? Register here',
                       style: TextStyle(
-                        color: Color(0xFF9784FF),
+                        color: Color(0xFF2DD9BE),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),

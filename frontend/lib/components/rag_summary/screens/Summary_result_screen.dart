@@ -9,6 +9,7 @@ import '../services/Rag_summary_service.dart';
 import '../utils/diary_week_group.dart';
 import '../widgets/Citation_chip.dart';
 import '../widgets/Feedback_card.dart';
+import '../widgets/weekly_summary_progress.dart';
 import 'Summary_generation_details_screen.dart';
 
 String _cleanSummaryText(String text) {
@@ -39,53 +40,10 @@ class _SummaryParagraphData {
   final List<_SummaryParagraphSegment> segments;
   final List<Citation> sources;
 
-  const _SummaryParagraphData({
-    required this.segments,
-    required this.sources,
-  });
+  const _SummaryParagraphData({required this.segments, required this.sources});
 }
 
-List<RagSummaryPoint> _supportedRagPoints(CompareSummaryResponse summary) {
-  final rag = summary.rag;
-  final rawClaims = rag.evaluation['per_claim'];
-  if (rawClaims is! List) return const <RagSummaryPoint>[];
-
-  final claimsById = <String, List<Map>>{};
-  for (final rawClaim in rawClaims) {
-    if (rawClaim is! Map) continue;
-    final claimId = rawClaim['claim_id']?.toString().trim() ?? '';
-    if (claimId.isNotEmpty) {
-      claimsById.putIfAbsent(claimId, () => <Map>[]).add(rawClaim);
-    }
-  }
-
-  final supported = <RagSummaryPoint>[];
-  for (final entry in rag.summaryPoints.asMap().entries) {
-    final claimId = entry.value.claimId;
-    final matchingClaims = claimId == null ? null : claimsById[claimId];
-    final isSupportedById = matchingClaims != null &&
-        matchingClaims.isNotEmpty &&
-        matchingClaims.every(_isEntailedClaim);
-    final hasSafeIndexFallback = rawClaims.length == rag.summaryPoints.length;
-    final isSupportedByIndex = hasSafeIndexFallback &&
-        entry.key < rawClaims.length &&
-        _isEntailedClaim(rawClaims[entry.key]);
-    if (isSupportedById || (matchingClaims == null && isSupportedByIndex)) {
-      supported.add(entry.value);
-    }
-  }
-  return supported;
-}
-
-bool _isEntailedClaim(dynamic rawClaim) {
-  if (rawClaim is! Map) return false;
-  return rawClaim['classification']?.toString().trim().toLowerCase() ==
-      'entailed';
-}
-
-_SummaryParagraphData _summaryParagraph(
-  List<RagSummaryPoint> summaryPoints,
-) {
+_SummaryParagraphData _summaryParagraph(List<RagSummaryPoint> summaryPoints) {
   final segments = <_SummaryParagraphSegment>[];
   final sources = <Citation>[];
   final sourceNumberByEvidenceId = <String, int>{};
@@ -230,7 +188,10 @@ class _SummaryResultScreenState extends State<SummaryResultScreen> {
       return const Scaffold(
         backgroundColor: Color(0xFF0B0B14),
         body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF7F77DD)),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 32),
+            child: WeeklySummaryProgress(),
+          ),
         ),
       );
     }
@@ -262,7 +223,7 @@ class _SummaryResultScreenState extends State<SummaryResultScreen> {
 
     final summary = _summary!;
 
-    final supportedPoints = _supportedRagPoints(summary);
+    final supportedPoints = summary.summaryPoints;
 
     if (supportedPoints.isEmpty) {
       return Scaffold(
@@ -475,9 +436,7 @@ class _SummaryParagraphCard extends StatelessWidget {
       final sentence = punctuation.isEmpty
           ? segment.text
           : segment.text.substring(0, segment.text.length - 1);
-      spans.add(
-        TextSpan(text: '$separator$sentence'),
-      );
+      spans.add(TextSpan(text: '$separator$sentence'));
       if (segment.sourceNumbers.isNotEmpty) {
         spans.add(
           TextSpan(

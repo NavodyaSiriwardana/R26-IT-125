@@ -197,7 +197,192 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
 
     if (success) {
       _resetForm();
+      if (context.mounted) _showSuccessDialog(context);
     }
+  }
+
+  // ─────────────────────────────────────────
+  // SUCCESS DIALOG
+  // ─────────────────────────────────────────
+
+  void _showSuccessDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF141428),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 40,
+                offset: const Offset(0, 20),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF2DD9BE), Color(0xFF7B61FF)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF7B61FF).withValues(alpha: 0.4),
+                      blurRadius: 26,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: Colors.white, size: 34),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Entry saved!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'See what it means for you right now',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF9494B8),
+                  fontSize: 12.5,
+                ),
+              ),
+              const SizedBox(height: 22),
+              _successOption(
+                dialogContext: dialogContext,
+                gradient: const [Color(0xFF1DB954), Color(0xFF0E5C29)],
+                icon: Icons.dashboard_outlined,
+                label: 'Dashboard',
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const ActivityDashboard()),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _successOption(
+                dialogContext: dialogContext,
+                gradient: const [Color(0xFF7B61FF), Color(0xFF3D2E7A)],
+                icon: Icons.auto_graph,
+                label: 'My Patterns',
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => MyPatternsScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              _successOption(
+                dialogContext: dialogContext,
+                gradient: const [Color(0xFF2DD9BE), Color(0xFF166B5E)],
+                icon: Icons.visibility_rounded,
+                label: 'Bias Insights',
+                onTap: () async {
+                  Navigator.pop(dialogContext);
+                  AppState.userId = await LocalStorage.getUserId();
+                  if (!context.mounted) return;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const HomeScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text(
+                  'Not now',
+                  style: TextStyle(
+                    color: Color(0xFF5a5a7a),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _successOption({
+    required BuildContext dialogContext,
+    required List<Color> gradient,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: gradient,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: gradient.first.withValues(alpha: 0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              const Icon(Icons.arrow_forward_rounded,
+                  color: Colors.white, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _resetForm() {
@@ -361,7 +546,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
                       _NavPill(
                         icon: Icons.visibility_rounded,
                         label: 'Bias Insights',
-                        color: const Color(0xFF35E47B),
+                        color: const Color(0xFF2DD9BE),
                         onTap: () async {
                           AppState.userId = await LocalStorage.getUserId();
                           if (!context.mounted) return;
@@ -668,42 +853,69 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
               padding: const EdgeInsets.all(16),
               child: SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF7B61FF),
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                height: 54,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(27),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF7B61FF).withValues(alpha: 0.4),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(27),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(27),
+                      onTap: _loading ? null : _submit,
+                      child: Ink(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(27),
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF2DD9BE)
+                                  .withValues(alpha: _loading ? 0.6 : 1),
+                              const Color(0xFF7B61FF)
+                                  .withValues(alpha: _loading ? 0.6 : 1),
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                        ),
+                        child: Center(
+                          child: _loading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Submit entry',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Icon(Icons.arrow_forward_rounded,
+                                        color: Colors.white, size: 18),
+                                  ],
+                                ),
+                        ),
+                      ),
                     ),
                   ),
-                  child: _loading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Submit entry',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Icon(Icons.arrow_forward,
-                                color: Colors.white, size: 16),
-                          ],
-                        ),
                 ),
               ),
             ),
@@ -972,29 +1184,41 @@ class _NavPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final darkColor = Color.lerp(color, Colors.black, 0.4)!;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.10),
+            gradient: LinearGradient(
+              colors: [color, darkColor],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: color.withValues(alpha: 0.35)),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 14, color: color),
+              Icon(icon, size: 15, color: Colors.white),
               const SizedBox(width: 6),
               Text(
                 label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
