@@ -6,7 +6,11 @@ import 'package:frontend/components/temporal_causal_patterns/screens/new_entry_s
 /// diaryEntries collection for this user — the manual form was removed
 /// from this component's flow, so there's nothing local to fall back to.
 class NoDiaryEntryScreen extends StatelessWidget {
-  const NoDiaryEntryScreen({super.key});
+  /// The latest entry exists but is too old to compare with the phone's
+  /// recent data.
+  final bool tooOld;
+
+  const NoDiaryEntryScreen({super.key, this.tooOld = false});
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +55,7 @@ class NoDiaryEntryScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    'No diary entry found',
+                    tooOld ? 'No recent diary entry' : 'No diary entry found',
                     style: GoogleFonts.outfit(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
@@ -59,12 +63,16 @@ class NoDiaryEntryScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    "Log today's activity in the main diary first, then "
-                    'come back here to analyze it.',
+                  Text(
+                    tooOld
+                        ? 'Your latest entry is too old to compare with your '
+                            "phone's recent activity. Log a new activity in the "
+                            'main diary, then come back to analyze it.'
+                        : "Log today's activity in the main diary first, then "
+                            'come back here to analyze it.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 14,
                       color: Colors.white54,
                       height: 1.5,
                     ),
@@ -74,11 +82,14 @@ class NoDiaryEntryScreen extends StatelessWidget {
                     width: double.infinity,
                     child: GestureDetector(
                       onTap: () {
-                        Navigator.pushReplacement(
+                        // Back to the team's diary entry template, the same
+                        // screen "Past Task" opens, leaving one screen under it.
+                        Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(
                             builder: (_) => const NewEntryScreen(),
                           ),
+                          (route) => route.isFirst,
                         );
                       },
                       child: Container(
@@ -114,7 +125,7 @@ class NoDiaryEntryScreen extends StatelessWidget {
                     onPressed: () => Navigator.pop(context),
                     child: const Text(
                       'Cancel',
-                      style: TextStyle(color: Colors.white38, fontSize: 13),
+                      style: TextStyle(color: Colors.white38, fontSize: 15),
                     ),
                   ),
                 ],

@@ -8,6 +8,12 @@ import numpy as np
 import io
 import base64
 import cv2
+from app.components.self_bias_identification.services.image_quality import (
+    apply_exif_orientation,
+    choose_orientation,
+    is_image_blurry,
+    is_too_dark,
+)
 
 emotion_classifier = pipeline(
     "image-classification",
@@ -47,10 +53,16 @@ _face_landmarker = mp_vision.FaceLandmarker.create_from_options(
 MULTIPLE_FACES = "MULTIPLE_FACES_DETECTED"
 
 
-def is_image_blurry(image: Image.Image, threshold: float = 15.0) -> bool:
-    img_array = np.array(image.convert("RGB"))
-    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-    return cv2.Laplacian(gray, cv2.CV_64F).var() < threshold
+def face_confidence(image: Image.Image) -> float:
+    """How sure the face detector is that this picture holds a face (0 if none)."""
+    mp_image = mp.Image(
+        image_format=mp.ImageFormat.SRGB,
+        data=np.array(image.convert("RGB")),
+    )
+    results = _face_detector.detect(mp_image)
+    if not results.detections:
+        return 0.0
+    return max(d.categories[0].score for d in results.detections)
 
 
 def detect_and_crop_face(image: Image.Image):
@@ -107,13 +119,26 @@ def image_to_base64(image: Image.Image) -> str:
 def analyze_facial_expression(image_base64: str):
     try:
         image_bytes = base64.b64decode(image_base64)
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        # Phone photos carry a rotation tag; apply it so the face is upright.
+        image = apply_exif_orientation(Image.open(io.BytesIO(image_bytes))).convert("RGB")
+
+        # Check lighting first: a dark frame also fails the blur test, and
+        # telling the user "blurry" would send them chasing the wrong fix.
+        if is_too_dark(image):
+            return {
+                "status": "low_light",
+                "message": "It is too dark for reliable analysis. Move to a brighter spot or face a light, then retake the photo."
+            }
 
         if is_image_blurry(image):
             return {
                 "status": "blurry_image",
                 "message": "The image is too blurry for reliable analysis. Please hold the camera steady and retake the photo."
             }
+
+        # Fallback for photos without a rotation tag: use the turn in which the
+        # face looks most upright.
+        image = choose_orientation(image, face_confidence)
 
         face_image, landmarks_visible = detect_and_crop_face(image)
 

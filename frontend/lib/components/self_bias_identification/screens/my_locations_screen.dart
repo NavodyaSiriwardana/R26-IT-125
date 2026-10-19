@@ -161,7 +161,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
                     'Manage your trusted reference places',
                     style: TextStyle(
                       color: _textSecondary,
-                      fontSize: 13,
+                      fontSize: 15,
                     ),
                   ),
                 ],
@@ -186,7 +186,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
           gradient: RadialGradient(
             center: const Alignment(-0.6, -1.1),
             radius: 1.3,
-            colors: [_green.withOpacity(0.14), Colors.transparent],
+            colors: [_green.withValues(alpha: 0.14), Colors.transparent],
             stops: const [0.0, 0.58],
           ),
         ),
@@ -255,7 +255,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
                                   'Places available for GPS verification',
                                   style: TextStyle(
                                     color: _textSecondary,
-                                    fontSize: 13,
+                                    fontSize: 15,
                                   ),
                                 ),
                               ],
@@ -275,7 +275,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
                               '${_locations.length}',
                               style: const TextStyle(
                                 color: _green,
-                                fontSize: 12,
+                                fontSize: 14,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -331,7 +331,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: _green.withOpacity(0.4),
+                color: _green.withValues(alpha: 0.4),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),
@@ -415,7 +415,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
             color: _surface2,
             borderRadius: BorderRadius.circular(13),
             border: Border.all(
-              color: Colors.white.withOpacity(0.055),
+              color: Colors.white.withValues(alpha: 0.055),
             ),
           ),
           child: Icon(
@@ -446,7 +446,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
             'Loading locations...',
             style: TextStyle(
               color: _textSecondary,
-              fontSize: 13,
+              fontSize: 15,
             ),
           ),
         ],
@@ -467,7 +467,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
           children: [
             Icon(
               Icons.cloud_off_rounded,
-              color: _red.withOpacity(0.7),
+              color: _red.withValues(alpha: 0.7),
               size: 40,
             ),
             const SizedBox(height: 16),
@@ -521,12 +521,12 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
         borderRadius: BorderRadius.circular(22),
 
         border: Border.all(
-          color: Colors.white.withOpacity(0.055),
+          color: Colors.white.withValues(alpha: 0.055),
         ),
 
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.22),
+            color: Colors.black.withValues(alpha: 0.22),
             blurRadius: 26,
             offset: const Offset(0, 12),
           ),
@@ -562,7 +562,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
                   '${_locations.length} saved',
                   style: const TextStyle(
                     color: _green,
-                    fontSize: 11.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -634,7 +634,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
       padding: const EdgeInsets.all(14),
 
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.025),
+        color: Colors.white.withValues(alpha: 0.025),
         borderRadius: BorderRadius.circular(15),
       ),
 
@@ -656,7 +656,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
             title,
             style: const TextStyle(
               color: _textMuted,
-              fontSize: 11.5,
+              fontSize: 13,
             ),
           ),
 
@@ -706,14 +706,14 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.white.withOpacity(0.06),
-                Colors.white.withOpacity(0.015),
+                Colors.white.withValues(alpha: 0.06),
+                Colors.white.withValues(alpha: 0.015),
               ],
             ),
             borderRadius: BorderRadius.circular(18),
 
             border: Border.all(
-              color: Colors.white.withOpacity(0.08),
+              color: Colors.white.withValues(alpha: 0.08),
             ),
           ),
 
@@ -787,7 +787,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: _textSecondary,
-                        fontSize: 12.5,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -798,7 +798,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
                       '$radius m verification radius',
                       style: const TextStyle(
                         color: _textMuted,
-                        fontSize: 12,
+                        fontSize: 14,
                       ),
                     ),
                   ],
@@ -818,7 +818,7 @@ class _MyLocationsScreenState extends State<MyLocationsScreen> {
                     width: 39,
                     height: 39,
                     decoration: BoxDecoration(
-                      color: _red.withOpacity(0.07),
+                      color: _red.withValues(alpha: 0.07),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -910,7 +910,7 @@ class _EmptyState extends StatelessWidget {
         color: _surface,
         borderRadius: BorderRadius.circular(21),
         border: Border.all(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
         ),
       ),
 

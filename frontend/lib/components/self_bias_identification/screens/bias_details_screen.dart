@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:frontend/app_state.dart';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
 
 class BiasDetailsScreen extends StatefulWidget {
   const BiasDetailsScreen({super.key});
@@ -78,7 +78,7 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
 
   Future<void> _loadUserData() async {
     try {
-      final response = await http.get(
+      final response = await ApiClient.get(
         Uri.parse('${ApiService.baseUrl}/api/bias/history/${AppState.userId}'),
       );
       if (response.statusCode == 200) {
@@ -94,9 +94,9 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
         setState(() => _userBiasFreq = freq);
       }
     } catch (e) {
-      print('Error: $e');
+      debugPrint('Error: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -115,7 +115,7 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Bias Types Explained', style: GoogleFonts.outfit(fontSize: 19, fontWeight: FontWeight.w700)),
-            const Text('TruthLens Knowledge Base', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            const Text('TruthLens Knowledge Base', style: TextStyle(fontSize: 14, color: Colors.white54)),
           ],
         ),
       ),
@@ -124,7 +124,7 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
           gradient: RadialGradient(
             center: const Alignment(0.8, -1.1),
             radius: 1.3,
-            colors: [const Color(0xFF7B6EFF).withOpacity(0.16), Colors.transparent],
+            colors: [const Color(0xFF7B6EFF).withValues(alpha: 0.16), Colors.transparent],
             stops: const [0.0, 0.58],
           ),
         ),
@@ -137,7 +137,7 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
                 children: [
                   const Text(
                     'Tap any bias to learn more',
-                    style: TextStyle(fontSize: 13, color: Colors.white60),
+                    style: TextStyle(fontSize: 15, color: Colors.white60),
                   ),
                   const SizedBox(height: 16),
                   ..._biasData.map((bias) => _modernBiasItem(bias)),
@@ -165,16 +165,16 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isExpanded
-                    ? [color.withOpacity(0.10), Colors.white.withOpacity(0.02)]
-                    : [Colors.white.withOpacity(0.06), Colors.white.withOpacity(0.015)],
+                    ? [color.withValues(alpha: 0.10), Colors.white.withValues(alpha: 0.02)]
+                    : [Colors.white.withValues(alpha: 0.06), Colors.white.withValues(alpha: 0.015)],
               ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isExpanded ? color.withOpacity(0.6) : Colors.white.withOpacity(0.08),
+                color: isExpanded ? color.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.08),
                 width: isExpanded ? 1.5 : 1,
               ),
               boxShadow: isExpanded
-                  ? [BoxShadow(color: color.withOpacity(0.16), blurRadius: 20, offset: const Offset(0, 8))]
+                  ? [BoxShadow(color: color.withValues(alpha: 0.16), blurRadius: 20, offset: const Offset(0, 8))]
                   : null,
             ),
             child: Padding(
@@ -199,8 +199,8 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
                         Text(
                           userCount > 0 ? '$userCount times detected' : 'Not detected yet',
                           style: TextStyle(
-                            fontSize: 12.5,
-                            color: userCount > 0 ? color.withOpacity(0.85) : Colors.white54,
+                            fontSize: 14,
+                            color: userCount > 0 ? color.withValues(alpha: 0.85) : Colors.white54,
                           ),
                         ),
                       ],
@@ -224,12 +224,12 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Colors.white.withOpacity(0.06), Colors.white.withOpacity(0.015)],
+                colors: [Colors.white.withValues(alpha: 0.06), Colors.white.withValues(alpha: 0.015)],
               ),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: color.withOpacity(0.4)),
+              border: Border.all(color: color.withValues(alpha: 0.4)),
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 24, offset: const Offset(0, 10)),
+                BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 24, offset: const Offset(0, 10)),
               ],
             ),
             child: Column(
@@ -246,7 +246,7 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
+                    color: color.withValues(alpha: 0.12),
                     borderRadius: const BorderRadius.only(
                       bottomLeft: Radius.circular(16),
                       bottomRight: Radius.circular(16),
@@ -281,7 +281,7 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
           Container(
             padding: const EdgeInsets.all(9),
             decoration: BoxDecoration(
-              color: textColor.withOpacity(0.1),
+              color: textColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: textColor, size: 18),
@@ -294,7 +294,7 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
                 Text(
                   label.toUpperCase(),
                   style: GoogleFonts.outfit(
-                    fontSize: 10.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: textColor,
                     letterSpacing: 0.6,
@@ -313,5 +313,5 @@ class _BiasDetailsScreenState extends State<BiasDetailsScreen> {
     );
   }
 
-  Widget _divider() => Divider(color: Colors.white.withOpacity(0.06), height: 1, thickness: 1);
+  Widget _divider() => Divider(color: Colors.white.withValues(alpha: 0.06), height: 1, thickness: 1);
 }

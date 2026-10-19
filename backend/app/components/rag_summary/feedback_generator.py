@@ -89,7 +89,7 @@ def _feedback_model_path() -> Path:
         snapshot = snapshot_download(
             _FEEDBACK_MODEL_NAME,
             allow_patterns=allow_patterns,
-            local_files_only=True,
+            local_files_only=False,
         )
     except LocalEntryNotFoundError:
         local_model = _FEEDBACK_MODEL_DIR / _FEEDBACK_MODEL_SUBDIR

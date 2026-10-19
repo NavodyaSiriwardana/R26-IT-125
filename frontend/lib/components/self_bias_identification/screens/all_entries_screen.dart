@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app_state.dart';
 import 'package:frontend/components/self_bias_identification/screens/bias_result_screen.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
+import 'package:frontend/components/self_bias_identification/services/entry_time.dart';
+import 'package:frontend/components/self_bias_identification/widgets/app_toast.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
 
 class AllEntriesScreen extends StatefulWidget {
   const AllEntriesScreen({super.key});
@@ -25,7 +27,7 @@ class _AllEntriesScreenState extends State<AllEntriesScreen> {
 
   Future<void> _loadEntries() async {
     try {
-      final response = await http.get(
+      final response = await ApiClient.get(
         Uri.parse('${ApiService.baseUrl}/api/bias/history/${AppState.userId}'),
       );
 
@@ -36,8 +38,8 @@ class _AllEntriesScreenState extends State<AllEntriesScreen> {
         history.sort((a, b) {
           final aId = a['entry_id']?.toString() ?? '';
           final bId = b['entry_id']?.toString() ?? '';
-          final aTime = int.tryParse(aId.replaceAll(RegExp(r'\D'), '')) ?? 0;
-          final bTime = int.tryParse(bId.replaceAll(RegExp(r'\D'), '')) ?? 0;
+          final aTime = entryTimestampMs(aId) ?? 0;
+          final bTime = entryTimestampMs(bId) ?? 0;
           return bTime.compareTo(aTime);
         });
 
@@ -46,9 +48,10 @@ class _AllEntriesScreenState extends State<AllEntriesScreen> {
         });
       }
     } catch (e) {
-      print('All entries load error: $e');
+      debugPrint('All entries load error: $e');
+      if (mounted) AppToast.error(context, AppToast.friendlyError(e));
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -82,7 +85,7 @@ class _AllEntriesScreenState extends State<AllEntriesScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('All Entries', style: GoogleFonts.outfit(fontSize: 19, fontWeight: FontWeight.w700)),
-            Text('${_entries.length} diary records', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Text('${_entries.length} diary records', style: const TextStyle(fontSize: 14, color: Colors.white54)),
           ],
         ),
       ),
@@ -168,18 +171,18 @@ class _HoverCardState extends State<HoverCard> {
           decoration: BoxDecoration(
             color: _isHovered
                 ? Color.alphaBlend(
-                    widget.color.withOpacity(0.14),
+                    widget.color.withValues(alpha: 0.14),
                     const Color(0xFF141428),
                   )
                 : const Color(0xFF141428),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: _isHovered ? widget.color.withOpacity(0.5) : Colors.white.withOpacity(0.06),
+              color: _isHovered ? widget.color.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.06),
               width: _isHovered ? 1.5 : 1,
             ),
             boxShadow: [
               BoxShadow(
-                color: _isHovered ? widget.color.withOpacity(0.25) : Colors.black.withOpacity(0.3),
+                color: _isHovered ? widget.color.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.3),
                 blurRadius: _isHovered ? 20 : 8,
                 offset: const Offset(0, 6),
               ),
@@ -204,8 +207,8 @@ class _HoverCardState extends State<HoverCard> {
                       Text(
                         widget.entryId,
                         style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withOpacity(0.4),
+                          fontSize: 14,
+                          color: Colors.white.withValues(alpha: 0.4),
                         ),
                       ),
                       if (_isHovered) ...[
@@ -213,7 +216,7 @@ class _HoverCardState extends State<HoverCard> {
                         Text(
                           "Tap to view full analysis →",
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 13,
                             color: widget.color,
                             fontWeight: FontWeight.w500,
                           ),
@@ -236,7 +239,7 @@ class _HoverCardState extends State<HoverCard> {
                     borderRadius: BorderRadius.circular(30),
                     boxShadow: [
                       BoxShadow(
-                        color: widget.color.withOpacity(_isHovered ? 0.55 : 0.35),
+                        color: widget.color.withValues(alpha: _isHovered ? 0.55 : 0.35),
                         blurRadius: _isHovered ? 20 : 14,
                         offset: const Offset(0, 6),
                       ),

@@ -2,25 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/app_state.dart';
-import 'package:frontend/components/self_bias_identification/widgets/gradient_ring_painter.dart';
 import 'package:frontend/components/self_bias_identification/widgets/tilt_card.dart';
 import 'package:frontend/components/self_bias_identification/screens/bias_result_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/weekly_trends_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/recommendations_screen.dart';
-import 'package:frontend/components/self_bias_identification/screens/profile_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/all_entries_screen.dart'
     as all_entries;
 import 'package:frontend/components/temporal_causal_patterns/screens/new_entry_screen.dart'
     as temporal;
+import 'package:frontend/components/self_bias_identification/screens/profile_screen.dart';
+import 'package:frontend/components/self_bias_identification/screens/bias_history_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/facial_capture_screen.dart';
+import 'package:frontend/components/self_bias_identification/widgets/reality_cards.dart';
+import 'package:frontend/components/self_bias_identification/services/entry_location_capture.dart';
 import 'package:frontend/components/self_bias_identification/screens/my_locations_screen.dart';
 import 'package:frontend/components/self_bias_identification/services/location_service.dart';
 import 'package:frontend/components/self_bias_identification/services/sensor_data_service.dart';
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
-import 'package:frontend/components/temporal_causal_patterns/services/local_storage.dart';
-import 'package:frontend/main.dart' show routeObserver;
-import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:frontend/components/self_bias_identification/services/entry_time.dart';
+import 'package:frontend/components/self_bias_identification/services/data_refresh.dart';
+import 'package:frontend/components/self_bias_identification/widgets/app_toast.dart';
+import 'package:frontend/components/self_bias_identification/services/api_client.dart';
+import 'package:frontend/components/self_bias_identification/widgets/history_hub.dart';
+import 'package:frontend/components/self_bias_identification/widgets/profile_avatar.dart';
+import 'package:frontend/components/self_bias_identification/widgets/score_gauge.dart';
+import 'package:frontend/components/self_bias_identification/services/profile_photo_service.dart';
+import 'package:frontend/components/self_bias_identification/services/profile_name_service.dart';
+import 'package:frontend/components/self_bias_identification/services/recommendations_seen.dart';
+import 'package:frontend/components/self_bias_identification/services/sign_in_check.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,7 +39,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with RouteAware {
+class _HomeScreenState extends State<HomeScreen> {
   // ============================================================
   // TRUTHLENS DESIGN SYSTEM
   // ============================================================
@@ -50,24 +60,14 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   static const Color _textSecondary = Color(0xFFA5AFBE);
   static const Color _textMuted = Color(0xFF738093);
 
-  // Solid card decoration shared by every panel on this screen.
-  static const Color _cardColor = Color(0xFF141428);
-
   BoxDecoration _glassDecoration({
     double radius = 20,
     Color borderColor = const Color(0x17FFFFFF),
   }) {
     return BoxDecoration(
-      color: _cardColor,
+      color: _surface,
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(color: borderColor),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.35),
-          blurRadius: 30,
-          offset: const Offset(0, 14),
-        ),
-      ],
     );
   }
 
@@ -83,25 +83,62 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   int _appSwitches = 0;
   int _socialMedia = 0;
   bool _isStudyCategory = true;
-  String _claimedLocation = '';
-  String _actualLocation = '';
-  String _moodBefore = '';
-  String _moodAfter = '';
   String _reflectionText = '';
   double _weeklyAvg = 0;
   List<Map<String, dynamic>> _recentEntries = [];
   bool _isLoading = true;
   Map<String, dynamic>? _latestEntry;
-  String _userName = '';
+
+  /// False until a signed-in student is known. Nothing is requested or shown
+  /// for an empty account.
+  bool _signedIn = true;
+  bool _started = false;
+
+  /// A new result whose recommendations have not been opened yet.
+  bool _newRecommendations = false;
 
   @override
   void initState() {
     super.initState();
+    DataRefresh.tick.addListener(_onDataChanged);
+    if (AppState.userId.isNotEmpty) {
+      _startUp();
+    } else {
+      _signedIn = false;
+      SignInCheck.ensure().then((ok) {
+        if (!mounted) return;
+        setState(() => _signedIn = ok);
+        if (ok) _startUp();
+      });
+    }
+  }
+
+  Future<void> _refreshBellDot() async {
+    final id = _latestEntry?['entry_id']?.toString() ?? '';
+    final isNew = await RecommendationsSeen.isNew(id);
+    if (mounted && isNew != _newRecommendations) {
+      setState(() => _newRecommendations = isNew);
+    }
+  }
+
+  /// The greeting follows the time of day.
+  static String _greeting([DateTime? now]) {
+    final hour = (now ?? DateTime.now()).hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  void _startUp() {
+    if (_started) return;
+    _started = true;
     SensorDataService.requestPermissions();
+    ProfilePhotoService.load();
+    ProfileNameService.load();
     _loadData();
-    LocalStorage.getName().then((name) {
-      if (mounted && name.isNotEmpty) setState(() => _userName = name);
-    });
+    // Right after a diary entry is written, remember where the phone is so the
+    // claimed place can be checked later. Never blocks or shows anything.
+    EntryLocationCapture.maybeCapture(AppState.userId);
     // Sequenced (not parallel) so none of these setup dialogs ever stack
     // on top of each other on a first launch.
     _checkUsageAccessSetup()
@@ -109,28 +146,92 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         .then((_) => _checkLocationsSetup());
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+  Widget _signedOutView() {
+    return Scaffold(
+      backgroundColor: _background,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: _orange.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: const Icon(Icons.lock_outline_rounded,
+                      size: 30, color: _orange),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Please sign in',
+                  style: GoogleFonts.outfit(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: _textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'We could not tell which student this is. Sign in from the '
+                  'diary, then open Bias Insights again.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15, height: 1.5, color: _textSecondary),
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    key: const Key('signed-out-back'),
+                    onPressed: () => Navigator.maybePop(context),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _green,
+                      foregroundColor: _background,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                    ),
+                    child: const Text('Go back',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
-    routeObserver.unsubscribe(this);
+    DataRefresh.tick.removeListener(_onDataChanged);
     super.dispose();
   }
 
-  // Fires when a route pushed on top of this screen is popped and this
-  // screen becomes visible again. Needed because the facial-capture ->
-  // analyzing -> result flow uses pushReplacement at each step, which
-  // resolves the ORIGINAL push's Future as soon as the first replacement
-  // happens — long before the analysis actually finishes and saves — so
-  // a plain `Navigator.push(...).then((_) => _loadData())` reloads too
-  // early and never fires again when the user actually comes back.
-  @override
-  void didPopNext() {
-    _loadData();
+  /// A new analysis or reset was saved somewhere down the navigation stack.
+  void _onDataChanged() {
+    if (mounted) _loadData();
+  }
+
+  /// The team's shared diary template is the single place entries are written,
+  /// and Bias Detection is opened from it, so "go to the diary" means going
+  /// back there. Run on its own (nothing to go back to), it opens this
+  /// team's new-entry screen instead.
+  void _openDiary() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const temporal.NewEntryScreen()),
+      ).then((_) => _loadData());
+    }
   }
 
   // ============================================================
@@ -359,9 +460,12 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   // ORIGINAL DATA LOADING (untouched)
   // ============================================================
 
+  static int _asInt(dynamic v) =>
+      v is num ? v.round() : (int.tryParse('$v') ?? 0);
+
   Future<void> _loadData() async {
     try {
-      final response = await http.get(
+      final response = await ApiClient.get(
         Uri.parse('${ApiService.baseUrl}/api/bias/history/${AppState.userId}'),
       );
 
@@ -373,8 +477,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           final aId = a['entry_id']?.toString() ?? '';
           final bId = b['entry_id']?.toString() ?? '';
 
-          final aTime = int.tryParse(aId.replaceAll(RegExp(r'\D'), '')) ?? 0;
-          final bTime = int.tryParse(bId.replaceAll(RegExp(r'\D'), '')) ?? 0;
+          final aTime = entryTimestampMs(aId) ?? 0;
+          final bTime = entryTimestampMs(bId) ?? 0;
 
           return bTime.compareTo(aTime);
         });
@@ -386,25 +490,22 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
           double total = 0;
           for (var e in history) {
-            total += (e['pas_score'] ?? 0);
+            total += (e['pas_score'] as num? ?? 0).toDouble();
           }
 
           if (!mounted) return;
 
           setState(() {
             _latestEntry = latest;
-            _latestPas = (latest['pas_score'] as num?)?.toInt() ?? 0;
+            // The server stores these as decimals (e.g. 87.5), so round them.
+            _latestPas = _asInt(latest['pas_score']);
             _pasLevel = latest['pas_level'] ?? '';
             _biasType = primaryBias['bias_type'] ?? '';
-            _claimedDuration = (comparison['claimed_duration'] as num?)?.toInt() ?? 0;
-            _verifiedEdu = (comparison['verified_educational'] as num?)?.toInt() ?? 0;
-            _appSwitches = (comparison['app_switches'] as num?)?.toInt() ?? 0;
-            _socialMedia = (comparison['social_media_minutes'] as num?)?.toInt() ?? 0;
+            _claimedDuration = _asInt(comparison['claimed_duration']);
+            _verifiedEdu = _asInt(comparison['verified_educational']);
+            _appSwitches = _asInt(comparison['app_switches']);
+            _socialMedia = _asInt(comparison['social_media_minutes']);
             _isStudyCategory = comparison['is_study_category'] as bool? ?? true;
-            _claimedLocation = comparison['claimed_location'] ?? '';
-            _actualLocation = comparison['actual_location'] ?? '';
-            _moodBefore = comparison['mood_before'] ?? '';
-            _moodAfter = comparison['mood_after'] ?? '';
             _reflectionText = latest['reflection_text'] ?? '';
             _weeklyAvg = total / history.length;
             _recentEntries = history
@@ -412,10 +513,12 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 .map((e) => e as Map<String, dynamic>)
                 .toList();
           });
+          await _refreshBellDot();
         }
       }
     } catch (e) {
       debugPrint('Error: $e');
+      if (mounted) AppToast.error(context, AppToast.friendlyError(e));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -429,6 +532,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
   @override
   Widget build(BuildContext context) {
+    if (!_signedIn) return _signedOutView();
     final bool isAccurate =
         _biasType == 'accurate_perception' || _latestPas >= 70;
 
@@ -445,23 +549,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       backgroundColor: _background,
       extendBody: true,
       body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(-0.7, -1.1),
-            radius: 1.4,
-            colors: [Color(0x3335E47B), Colors.transparent],
-            stops: [0.0, 0.58],
-          ),
-        ),
+        decoration: const BoxDecoration(color: _background),
         child: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(1.1, -0.9),
-              radius: 1.3,
-              colors: [Color(0x2455CFE0), Colors.transparent],
-              stops: [0.0, 0.55],
-            ),
-          ),
+          decoration: const BoxDecoration(),
           child: _isLoading
           ? _buildSkeletonLoading()
           : RefreshIndicator(
@@ -480,61 +570,43 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                     elevation: 0,
                     toolbarHeight: 82,
                     automaticallyImplyLeading: false,
-                    backgroundColor: _background.withOpacity(0.97),
+                    backgroundColor: _background.withValues(alpha: 0.97),
                     surfaceTintColor: Colors.transparent,
                     titleSpacing: 18,
                     title: Row(
                       children: [
-                        Container(
-                          width: 43,
-                          height: 43,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                _green.withValues(alpha: 0.28),
-                                _green.withValues(alpha: 0.08),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(color: _green.withValues(alpha: 0.3)),
-                          ),
-                          child: const Icon(
-                            Icons.visibility_rounded,
-                            color: _green,
-                            size: 21,
-                          ),
-                        ),
-                        const SizedBox(width: 13),
                         Expanded(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Good morning',
-                                style: TextStyle(
+                              Text(
+                                _greeting(),
+                                style: const TextStyle(
                                   color: _textSecondary,
                                   fontSize: 13.5,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
                               const SizedBox(height: 2),
-                              Text(
-                                _userName.isNotEmpty ? _userName : 'there',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.outfit(
-                                  color: _textPrimary,
-                                  fontSize: 21,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.3,
+                              ValueListenableBuilder<String>(
+                                valueListenable: ProfileNameService.name,
+                                builder: (context, value, child) => Text(
+                                  ProfileNameService.displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.outfit(
+                                    color: _textPrimary,
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.3,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
+                        const SizedBox(width: 10),
 
                         // My Locations
                         _topButton(
@@ -559,9 +631,12 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                           clipBehavior: Clip.none,
                           children: [
                             _topButton(
-                              icon: Icons.notifications_active_rounded,
+                              icon: Icons.notifications_rounded,
                               accent: _orange,
                               onTap: () {
+                                final id = _latestEntry?['entry_id']?.toString() ?? '';
+                                RecommendationsSeen.markSeen(id);
+                                setState(() => _newRecommendations = false);
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -571,27 +646,21 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                 );
                               },
                             ),
-                            if (_recentEntries.isNotEmpty)
+                            if (_newRecommendations)
                               Positioned(
-                                right: 6,
-                                top: 6,
+                                key: const Key('bell-dot'),
+                                right: -2,
+                                top: -2,
                                 child: Container(
-                                  width: 8,
-                                  height: 8,
+                                  width: 13,
+                                  height: 13,
                                   decoration: BoxDecoration(
-                                    color: _green,
+                                    color: _red,
                                     shape: BoxShape.circle,
                                     border: Border.all(
                                       color: _background,
-                                      width: 1.5,
+                                      width: 2,
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: _green.withValues(alpha: 0.6),
-                                        blurRadius: 6,
-                                        spreadRadius: 0.5,
-                                      ),
-                                    ],
                                   ),
                                 ),
                               ),
@@ -611,43 +680,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               ),
                             );
                           },
-                          child: Container(
-                            width: 42,
-                            height: 42,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  _green.withValues(alpha: 0.30),
-                                  _cyan.withValues(alpha: 0.16),
-                                ],
-                              ),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _green.withValues(alpha: 0.4),
-                                width: 1.4,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: _green.withValues(alpha: 0.22),
-                                  blurRadius: 14,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Text(
-                              _userName.isNotEmpty
-                                  ? _userName[0].toUpperCase()
-                                  : 'U',
-                              style: GoogleFonts.outfit(
-                                color: _green,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
+                          // The student's photo, or their initial.
+                          child: const ProfileAvatar(size: 42, borderWidth: 1.4),
                         ),
                       ],
                     ),
@@ -797,7 +831,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                       'Your latest TruthLens sessions',
                                       style: TextStyle(
                                         color: _textSecondary,
-                                        fontSize: 13,
+                                        fontSize: 15,
                                       ),
                                     ),
                                   ],
@@ -808,8 +842,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => const all_entries
-                                          .AllEntriesScreen(),
+                                      builder: (_) => const BiasHistoryScreen(),
                                     ),
                                   );
                                 },
@@ -817,7 +850,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                   'See all',
                                   style: TextStyle(
                                     color: _green,
-                                    fontSize: 13,
+                                    fontSize: 15,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -836,7 +869,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                     'No entries yet',
                                     style: TextStyle(
                                       color: _textMuted,
-                                      fontSize: 13,
+                                      fontSize: 15,
                                     ),
                                   ),
                                 ),
@@ -853,6 +886,34 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                     )
                                     .toList(),
                               ),
+
+                        const SizedBox(height: 28),
+
+                        // HISTORY: the two pages behind the summaries above
+                        _animatedSection(
+                          delay: 460,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'History',
+                                style: GoogleFonts.outfit(
+                                  color: _textPrimary,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Every analysis and every camera scan',
+                                style: TextStyle(color: _textSecondary, fontSize: 15),
+                              ),
+                              const SizedBox(height: 14),
+                              const HistoryHub(),
+                            ],
+                          ),
+                        ),
                       ]),
                     ),
                   ),
@@ -933,23 +994,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              _surface2.withValues(alpha: 0.94),
-              _surface.withValues(alpha: 0.94),
-            ],
-          ),
+          color: _surface2,
           borderRadius: BorderRadius.circular(28),
           border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.45),
-              blurRadius: 30,
-              offset: const Offset(0, 14),
-            ),
-          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -985,19 +1032,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 height: 52,
                 margin: const EdgeInsets.only(top: 0),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF6FE07E), _green, _cyan],
-                  ),
+                  color: _green,
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: _green.withValues(alpha: 0.4),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
                 ),
                 child: const Icon(
                   Icons.add_rounded,
@@ -1052,8 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           onTap();
         },
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
+          duration: Duration.zero,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: selected ? _green.withValues(alpha: 0.14) : Colors.transparent,
@@ -1068,7 +1103,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 label,
                 style: TextStyle(
                   color: color,
-                  fontSize: 10.5,
+                  fontSize: 12,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
@@ -1084,22 +1119,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   // ================================================================
 
   Widget _animatedSection({required Widget child, int delay = 0}) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: 1),
-      duration: Duration(milliseconds: 450 + delay),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, animatedChild) {
-        final opacity = value.clamp(0.0, 1.0);
-        return Opacity(
-          opacity: opacity,
-          child: Transform.translate(
-            offset: Offset(0, 14 * (1 - value)),
-            child: animatedChild,
-          ),
-        );
-      },
-      child: child,
-    );
+    return child;
   }
 
   // ================================================================
@@ -1112,7 +1132,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     Color? accent,
     Widget? glyph,
   }) {
-    final tint = accent ?? Colors.white.withValues(alpha: 0.7);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1126,18 +1145,11 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           height: 42,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                tint.withValues(alpha: accent == null ? 0.08 : 0.18),
-                tint.withValues(alpha: accent == null ? 0.02 : 0.05),
-              ],
-            ),
+            color: const Color(0xFF151C27),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: tint.withValues(alpha: accent == null ? 0.09 : 0.28)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
-          child: glyph ?? Icon(icon, color: accent ?? _textPrimary, size: 19),
+          child: glyph ?? Icon(icon, color: accent ?? _textPrimary, size: 20),
         ),
       ),
     );
@@ -1195,7 +1207,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           subtitle,
           style: const TextStyle(
             color: _textSecondary,
-            fontSize: 13,
+            fontSize: 15,
             height: 1.4,
           ),
         ),
@@ -1211,12 +1223,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     final double progress = (_latestPas / 100).clamp(0.0, 1.0).toDouble();
 
     return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: progress),
-      duration: const Duration(milliseconds: 1200),
-      curve: Curves.easeOutCubic,
+      tween: Tween<double>(begin: progress, end: progress),
+      duration: Duration.zero,
       builder: (context, animatedValue, child) {
-        final animatedScore = (animatedValue * 100).round();
-
         return TiltCard(
           borderRadius: BorderRadius.circular(26),
           child: Container(
@@ -1237,7 +1246,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                           'SELF-AWARENESS SCORE',
                           style: TextStyle(
                             color: _textSecondary,
-                            fontSize: 11,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.0,
                           ),
@@ -1268,14 +1277,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                         vertical: 7,
                       ),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            levelColor.withValues(alpha: 0.22),
-                            levelColor.withValues(alpha: 0.10),
-                          ],
-                        ),
+                        color: levelColor.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: levelColor.withValues(alpha: 0.3)),
                       ),
@@ -1283,7 +1285,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                         _pasLevel.isEmpty ? 'Analyzed' : _pasLevel,
                         style: GoogleFonts.outfit(
                           color: levelColor,
-                          fontSize: 11.5,
+                          fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -1292,59 +1294,15 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 ],
               ),
               const SizedBox(height: 26),
+              // The score as a bike-meter dial (same gauge as the result page).
+              Center(child: ScoreGauge(score: _latestPas, width: 270)),
+              const SizedBox(height: 14),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 140,
-                    height: 140,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        const SizedBox(
-                          width: 140,
-                          height: 140,
-                          child: CustomPaint(painter: RingTicksPainter()),
-                        ),
-                        SizedBox(
-                          width: 104,
-                          height: 104,
-                          child: CustomPaint(
-                            painter: GradientRingPainter(
-                              progress: animatedValue,
-                              colors: [pasColor.withValues(alpha: 0.75), pasColor],
-                              strokeWidth: 8.5,
-                            ),
-                          ),
-                        ),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '$animatedScore',
-                              style: GoogleFonts.outfit(
-                                color: pasColor,
-                                fontSize: 38,
-                                height: 1,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            const Text(
-                              'out of 100',
-                              style: TextStyle(
-                                color: _textSecondary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 21),
                   Expanded(
                     child: Container(
-                      padding: const EdgeInsets.all(15),
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.035),
                         borderRadius: BorderRadius.circular(18),
@@ -1354,7 +1312,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                         children: [
                           const Text(
                             'Perception',
-                            style: TextStyle(color: _textMuted, fontSize: 12),
+                            style: TextStyle(color: _textMuted, fontSize: 14),
                           ),
                           const SizedBox(height: 5),
                           Text(
@@ -1363,15 +1321,29 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: _textPrimary,
-                              fontSize: 12.5,
+                              fontSize: 14,
                               height: 1.3,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(height: 15),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.035),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           const Text(
                             'Weekly average',
-                            style: TextStyle(color: _textMuted, fontSize: 12),
+                            style: TextStyle(color: _textMuted, fontSize: 14),
                           ),
                           const SizedBox(height: 5),
                           Text(
@@ -1393,7 +1365,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.025),
+                  color: Colors.white.withValues(alpha: 0.025),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Text(
@@ -1429,16 +1401,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _cardColor,
+        color: _surface,
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        border: Border.all(color: accent.withValues(alpha: 0.22)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1468,7 +1433,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _textSecondary, fontSize: 12.5),
+            style: const TextStyle(color: _textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 9),
           Row(
@@ -1511,7 +1476,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: trend.favorable ? _green : _red,
-                      fontSize: 10,
+                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1615,53 +1580,20 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   // ================================================================
 
   Widget _buildRealityCard() {
-    return TiltCard(
-      borderRadius: BorderRadius.circular(23),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(23),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(23),
-          onTap: _latestEntry == null ? null : () => _openLatestAnalysis(),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: _glassDecoration(radius: 23),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Reality check',
-                  style: GoogleFonts.outfit(
-                    color: _textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _buildCompareRow(
-                  label: 'Location',
-                  claimed: _claimedLocation,
-                  actual: _actualLocation,
-                ),
-                _cardDivider(),
-                _buildCompareRow(
-                  label: 'Study duration',
-                  claimed: '$_claimedDuration min',
-                  actual: '$_verifiedEdu min',
-                ),
-                _cardDivider(),
-                _buildCompareRow(
-                  label: 'Mood shift',
-                  claimed: _moodBefore,
-                  actual: _moodAfter,
-                ),
-                _tapHintRow(),
-              ],
-            ),
-          ),
+    final comparison = _latestEntry?['comparison'];
+    if (comparison is! Map) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: _glassDecoration(radius: 23),
+        child: const Text(
+          'Analyze a diary entry to see how what you wrote compares with your phone.',
+          style: TextStyle(color: _textSecondary, fontSize: 14, height: 1.5),
         ),
-      ),
+      );
+    }
+    return RealityCardsSection(
+      comparison: Map<String, dynamic>.from(comparison),
     );
   }
 
@@ -1700,105 +1632,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     );
   }
 
-  Widget _buildCompareRow({
-    required String label,
-    required String claimed,
-    required String actual,
-  }) {
-    final bool isGood = claimed.toLowerCase() == actual.toLowerCase();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: _textSecondary,
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _compareValue(
-                title: 'CLAIMED',
-                value: claimed,
-                color: _cyan,
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 9),
-              child: Text(
-                '→',
-                style: TextStyle(color: _textMuted, fontSize: 20),
-              ),
-            ),
-            Expanded(
-              child: _compareValue(
-                title: 'VERIFIED',
-                value: actual,
-                color: isGood ? _green : _red,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _compareValue({
-    required String title,
-    required String value,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A36),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: color.withValues(alpha: 0.82),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value.isEmpty ? 'Unknown' : value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.outfit(
-              color: color,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _cardDivider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 15),
-      child: Divider(
-        height: 1,
-        thickness: 1,
-        color: Colors.white.withOpacity(0.045),
-      ),
-    );
-  }
-
   // ================================================================
   // BIAS CARD
   // ================================================================
@@ -1827,7 +1660,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                         children: [
                           const Text(
                             'Latest bias',
-                            style: TextStyle(color: _textMuted, fontSize: 12),
+                            style: TextStyle(color: _textMuted, fontSize: 14),
                           ),
                           const SizedBox(height: 5),
                           Text(
@@ -1851,14 +1684,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                         vertical: 7,
                       ),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            pasColor.withValues(alpha: 0.2),
-                            pasColor.withValues(alpha: 0.09),
-                          ],
-                        ),
+                        color: pasColor.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: pasColor.withValues(alpha: 0.28)),
                       ),
@@ -1866,7 +1692,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                         isAccurate ? 'Accurate' : 'Detected',
                         style: TextStyle(
                           color: pasColor,
-                          fontSize: 11.5,
+                          fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -1893,16 +1719,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _cardColor,
+        color: _surface,
         borderRadius: BorderRadius.circular(23),
-        border: Border.all(color: _green.withValues(alpha: 0.18)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 30,
-            offset: const Offset(0, 14),
-          ),
-        ],
+        border: Border.all(color: _green.withValues(alpha: 0.22)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1918,7 +1737,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           const SizedBox(height: 4),
           const Text(
             'Personalized analysis',
-            style: TextStyle(color: _textSecondary, fontSize: 12.5),
+            style: TextStyle(color: _textSecondary, fontSize: 14),
           ),
           const SizedBox(height: 15),
           Text(
@@ -1952,7 +1771,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
               children: [
                 Text(
                   'View full analysis',
-                  style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700),
+                  style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(width: 5),
                 const Icon(Icons.arrow_forward_rounded, size: 15),
@@ -1973,11 +1792,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     final pas = entry['pas_score'] ?? 0;
     final bias = entry['primary_bias']?['bias_type'] ?? '';
     final bool isAccurate = bias == 'accurate_perception' || pas >= 70;
-    final Color color = isAccurate
-        ? _green
-        : pas >= 50
-        ? _orange
-        : _red;
+    // Each score gets its own pure colour, so a list of results reads at a glance.
+    final Color color = ScoreGauge.toneFor(isAccurate && pas < 70 ? 70 : pas);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -2026,7 +1842,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                         'TruthLens analysis',
                         style: TextStyle(
                           color: _textSecondary,
-                          fontSize: 11.5,
+                          fontSize: 13,
                         ),
                       ),
                     ],
@@ -2039,15 +1855,15 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
+                    color: const Color(0xFF151C27),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: color.withValues(alpha: 0.25)),
+                    border: Border.all(color: color, width: 1.6),
                   ),
                   child: Text(
                     '$pas',
                     style: GoogleFonts.outfit(
                       color: color,
-                      fontSize: 14,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -2069,13 +1885,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 30, 22, 26),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF111A27), Color(0xFF0D151F)],
-        ),
+        color: _surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withOpacity(0.055)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.055)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2103,29 +1915,14 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           GestureDetector(
             onTap: () {
               HapticFeedback.lightImpact();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const temporal.NewEntryScreen()),
-              ).then((_) => _loadData());
+              _openDiary();
             },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 15),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF6FE07E), _green, _cyan],
-                ),
+                color: _green,
                 borderRadius: BorderRadius.circular(15),
-                boxShadow: [
-                  BoxShadow(
-                    color: _green.withValues(alpha: 0.35),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
               ),
               child: Center(
                 child: Text(
@@ -2245,57 +2042,20 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 /// A small icon badge with a slow, continuous breathing glow — used on the
 /// empty state so the very first thing a new student sees still feels
 /// alive rather than static.
-class _PulsingGlowIcon extends StatefulWidget {
+class _PulsingGlowIcon extends StatelessWidget {
   final Color color;
   const _PulsingGlowIcon({required this.color});
 
   @override
-  State<_PulsingGlowIcon> createState() => _PulsingGlowIconState();
-}
-
-class _PulsingGlowIconState extends State<_PulsingGlowIcon>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final t = Curves.easeInOut.transform(_controller.value);
-        return Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: widget.color.withValues(alpha: 0.14),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withValues(alpha: 0.18 + 0.20 * t),
-                blurRadius: 18 + 14 * t,
-                spreadRadius: 1 + 2 * t,
-              ),
-            ],
-          ),
-          child: child,
-        );
-      },
-      child: Icon(Icons.visibility_rounded, color: widget.color, size: 26),
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(Icons.visibility_rounded, color: color, size: 26),
     );
   }
 }
@@ -2322,57 +2082,10 @@ class _GroundRingPainter extends CustomPainter {
 /// Sweeps a soft diagonal highlight across [child] on a loop — used to
 /// turn flat skeleton placeholder boxes into a recognizable "loading"
 /// shimmer instead of a plain static grey block.
-class _ShimmerSweep extends StatefulWidget {
+class _ShimmerSweep extends StatelessWidget {
   final Widget child;
   const _ShimmerSweep({required this.child});
 
   @override
-  State<_ShimmerSweep> createState() => _ShimmerSweepState();
-}
-
-class _ShimmerSweepState extends State<_ShimmerSweep>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final dx = -1.5 + 3.0 * _controller.value;
-        return ShaderMask(
-          blendMode: BlendMode.srcATop,
-          shaderCallback: (bounds) {
-            return LinearGradient(
-              begin: Alignment(dx - 0.6, -0.3),
-              end: Alignment(dx + 0.6, 0.3),
-              colors: [
-                Colors.white.withValues(alpha: 0.0),
-                Colors.white.withValues(alpha: 0.14),
-                Colors.white.withValues(alpha: 0.0),
-              ],
-              stops: const [0.35, 0.5, 0.65],
-            ).createShader(bounds);
-          },
-          child: child,
-        );
-      },
-      child: widget.child,
-    );
-  }
+  Widget build(BuildContext context) => child;
 }

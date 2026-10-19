@@ -229,11 +229,11 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                         controller: _searchController,
                         onSubmitted: (_) => _searchLocation(),
                         textInputAction: TextInputAction.search,
-                        style: const TextStyle(color: _textPrimary, fontSize: 13),
+                        style: const TextStyle(color: _textPrimary, fontSize: 15),
                         decoration: InputDecoration(
                           border: InputBorder.none,
                           hintText: 'Search a place, e.g. SLIIT Malabe',
-                          hintStyle: const TextStyle(color: _textSecondary, fontSize: 13),
+                          hintStyle: const TextStyle(color: _textSecondary, fontSize: 15),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           suffixIcon: _searching
                               ? const Padding(
@@ -292,7 +292,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                       '${_centerPosition.longitude.toStringAsFixed(5)}',
                       style: const TextStyle(
                         color: _textSecondary,
-                        fontSize: 12.5,
+                        fontSize: 14,
                       ),
                     ),
                     const SizedBox(height: 14),

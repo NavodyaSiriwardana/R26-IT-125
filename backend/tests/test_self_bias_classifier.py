@@ -71,7 +71,9 @@ class TestBiasClassifier(unittest.TestCase):
         self.assertIn("schedule_mismatch", types)
 
     def test_classify_with_rules_flags_facial_stress_mismatch(self):
-        features = _features(stress_mismatch=0)
+        # stress_mismatch is 1 only when the face shows stress the student's
+        # own mood report does not (the comparator decides that).
+        features = _features(stress_mismatch=1)
         facial_emotion = {
             "status": "success",
             "dominant_emotion": "sad",
@@ -83,6 +85,25 @@ class TestBiasClassifier(unittest.TestCase):
 
         types = {item["type"] for item in result["additional_indicators"]}
         self.assertIn("facial_stress_mismatch", types)
+
+    def test_honest_stress_report_is_not_flagged_as_a_facial_mismatch(self):
+        # The student said they feel stressed, so a stressed face agrees with
+        # them: nothing was underestimated.
+        features = _features(stress_mismatch=0)
+        facial_emotion = {
+            "status": "success",
+            "dominant_emotion": "sad",
+            "stress_indicator": 0.9,
+        }
+        result = self.classifier.classify_with_rules(
+            features, facial_emotion=facial_emotion, mood_after="stressed"
+        )
+
+        types = {item["type"] for item in result["additional_indicators"]}
+        self.assertNotIn("facial_stress_mismatch", types)
+        self.assertNotEqual(
+            result["primary_bias"]["bias_type"], "stress_underestimation"
+        )
 
 
 if __name__ == "__main__":

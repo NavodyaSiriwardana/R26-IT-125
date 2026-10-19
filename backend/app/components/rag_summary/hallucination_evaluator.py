@@ -146,7 +146,7 @@ def _get_nli_pipeline(model_name: str, model_revision: Optional[str] = None) -> 
                 "model": model_name,
                 "tokenizer": model_name,
                 "top_k": None,
-                "local_files_only": True,
+                "local_files_only":False,
                 "device": -1,
                 "dtype": torch.bfloat16,
             }

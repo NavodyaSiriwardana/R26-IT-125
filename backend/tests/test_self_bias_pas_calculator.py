@@ -36,8 +36,10 @@ class TestPASCalculator(unittest.TestCase):
         )
         result = self.calculator.calculate(features, claimed_duration=60)
         # activity/location/calendar all carry a non-zero floor score even
-        # on mismatch (25/30/50), so a complete mismatch doesn't hit 0.
-        self.assertEqual(result["pas_score"], 14)
+        # on mismatch (25/30/50), and the stress component is a full 100 here
+        # (no stress mismatch), so a complete mismatch doesn't hit 0:
+        # 25*0.18 + 30*0.135 + 50*0.09 + 100*0.10 = 23.05 -> 23.
+        self.assertEqual(result["pas_score"], 23)
         self.assertEqual(result["level"], "Severe Bias")
 
     def test_breakdown_matches_weighted_components(self):

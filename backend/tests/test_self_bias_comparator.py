@@ -117,7 +117,9 @@ class TestMultiSignalComparatorOtherSignals(unittest.TestCase):
         result = self.comparator.compare(diary, sensor)
         self.assertEqual(result["features"]["location_match"], 1)
 
-    def test_mood_contradiction_triggers_stress_mismatch(self):
+    def test_honestly_reported_stress_is_not_a_stress_mismatch(self):
+        # A student who says they ended up stressed is being honest, even though
+        # their mood dropped. Only stress the student did NOT report counts.
         diary = {
             "activity_category": "Play",
             "claimed_duration_minutes": 60,
@@ -127,7 +129,8 @@ class TestMultiSignalComparatorOtherSignals(unittest.TestCase):
         sensor = {}
 
         result = self.comparator.compare(diary, sensor)
-        self.assertEqual(result["features"]["stress_mismatch"], 1)
+        self.assertEqual(result["features"]["stress_mismatch"], 0)
+        self.assertTrue(result["comparison"]["mood_declined"])
 
     def test_high_facial_stress_triggers_stress_mismatch_independently(self):
         diary = {

@@ -15,11 +15,15 @@ class ReflectionBot:
                 "Block social media during study sessions",
                 "Use Pomodoro technique (25 min focus blocks)",
                 "Track actual learning outcomes not just time",
+                "Write down what you learned at the end of each session",
+                "Keep your phone in another room while you study",
             ],
             [
                 "Set a specific page/topic goal before you start",
                 "Log study time with an app that verifies activity",
                 "Study in a location without your phone nearby",
+                "Review what you covered before you stop for the day",
+                "Start with the hardest topic while your energy is high",
             ],
         ],
         "focus_mismatch": [
@@ -27,11 +31,15 @@ class ReflectionBot:
                 "Enable Do Not Disturb during study",
                 "Use single-app focus mode",
                 "Take scheduled breaks every 25 minutes",
+                "Silence group chats while you study",
+                "Put your phone face down, out of reach",
             ],
             [
                 "Turn off non-essential notifications before starting",
                 "Keep only the study app open, close the rest",
                 "Batch quick app checks into one 5-minute window per hour",
+                "Write down distracting thoughts and deal with them later",
+                "Plan the next session before you finish this one",
             ],
         ],
         "context_mismatch": [
@@ -39,11 +47,15 @@ class ReflectionBot:
                 "Study in your planned location",
                 "Create a dedicated study environment",
                 "Track your actual study locations",
+                "Plan your route and travel time before you leave",
+                "Tell a friend where you plan to study",
             ],
             [
                 "Pick one consistent study spot for this week",
                 "If plans change, update your claimed location honestly",
                 "Note what made the planned location hard to reach",
+                "Keep a backup study spot close by",
+                "Check the location is open before you go",
             ],
         ],
         "stress_underestimation": [
@@ -51,11 +63,15 @@ class ReflectionBot:
                 "Take 5-minute breaks every hour",
                 "Practice deep breathing exercises",
                 "Reduce your daily task load",
+                "Drink water and step into daylight between sessions",
+                "Sleep at a regular time to help recovery",
             ],
             [
                 "Try a short walk before your next session",
                 "Check in with how you actually feel, not just the plan",
                 "Consider talking to someone about your workload",
+                "Drop one task from today if you can",
+                "Write down what is worrying you before you start",
             ],
         ],
         "accurate_perception": [
@@ -63,11 +79,15 @@ class ReflectionBot:
                 "Continue your current study habits",
                 "Share your strategies with peers",
                 "Set progressively challenging goals",
+                "Keep logging every entry to track your progress",
+                "Reward yourself after a good session",
             ],
             [
                 "Keep logging honestly — it's working",
                 "Try slightly longer sessions if energy allows",
                 "Mentor someone struggling with focus",
+                "Review your best session and repeat what worked",
+                "Plan a rest day so you stay consistent",
             ],
         ],
     }
@@ -118,17 +138,15 @@ class ReflectionBot:
                 f"signals suggest underlying stress. "
                 f"Consider taking regular breaks."
             ),
-            "accurate_perception": (
-                f"Excellent self-awareness! Your PAS score of "
-                f"{pas_score}/100 shows strong alignment. "
-                f"Keep this momentum going!"
-            ),
+            "accurate_perception": self._accurate_text(pas_score),
         }
 
         reflection_text = templates.get(
             bias_type,
             "Analysis complete. Review your study patterns."
         )
+
+        reflection_text += self._unscored_note(comparison)
 
         streak = self._recent_streak(bias_type, history or [])
         pool = self.ACTION_POOLS.get(bias_type, [[]])
@@ -147,6 +165,40 @@ class ReflectionBot:
             "is_recurring": streak >= 1,
             "streak_count": streak + 1,
         }
+
+    @staticmethod
+    def _accurate_text(pas_score: int) -> str:
+        """No single bias stood out, but the praise must match the PAS level."""
+        if pas_score >= 70:
+            return (
+                f"Excellent self-awareness! Your PAS score of "
+                f"{pas_score}/100 shows strong alignment. "
+                f"Keep this momentum going!"
+            )
+        if pas_score >= 50:
+            return (
+                f"No single bias stood out, but your PAS score of "
+                f"{pas_score}/100 shows only partial alignment between your "
+                f"entry and what was observed. Check the details below."
+            )
+        return (
+            f"No single bias stood out, but your PAS score of "
+            f"{pas_score}/100 shows a large gap between your entry and what "
+            f"was observed. Review the details below."
+        )
+
+    @staticmethod
+    def _unscored_note(comparison: dict) -> str:
+        """Tell the student which signals could not be checked, so a missing
+        check is never mistaken for a clean (or failed) one."""
+        notes = []
+        if comparison.get("is_study_category") and comparison.get("duration_checked") is False:
+            notes.append("your entry had no duration, so study time was not scored")
+        if comparison.get("location_checked") is False:
+            notes.append("your location could not be verified, so it was not scored")
+        if not notes:
+            return ""
+        return " Note: " + " and ".join(notes) + "."
 
     def _recent_streak(self, bias_type: str, history: list) -> int:
         """Counts how many of the most recent past entries (newest first,
