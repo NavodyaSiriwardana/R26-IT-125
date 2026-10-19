@@ -285,7 +285,7 @@ class FirebaseService:
     # deliberately NOT touched here.
     OWNED_BY_USER_ID_FIELD = (
         "bias_results", "manual_diary_entries", "auto_sensor_data", "mood_resets",
-        "face_checks",
+        "face_checks", "entry_locations",
     )
     OWNED_BY_DOC_ID = ("consents", "user_locations")
 
@@ -307,6 +307,35 @@ class FirebaseService:
             else:
                 deleted[name] = 0
         return deleted
+
+    def save_entry_location(self, user_id: str, doc_id: str, data: dict) -> bool:
+        """Where the phone was when one diary entry was written. The first
+        capture for an entry is kept: a second one would be taken later, further
+        from the activity."""
+        try:
+            ref = db.collection("entry_locations").document(f"{user_id}__{doc_id}")
+            if ref.get().exists:
+                return True
+            ref.set({
+                **data,
+                "user_id": user_id,
+                "source_doc_id": doc_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+            return True
+        except Exception as e:
+            print(f"Firebase save error (entry location): {e}", flush=True)
+            return False
+
+    def get_entry_location(self, user_id: str, doc_id: str) -> dict | None:
+        if not doc_id:
+            return None
+        try:
+            doc = db.collection("entry_locations").document(f"{user_id}__{doc_id}").get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            print(f"Firebase error: {e}", flush=True)
+            return None
 
     def get_user_locations(self, user_id: str) -> dict:
         try:

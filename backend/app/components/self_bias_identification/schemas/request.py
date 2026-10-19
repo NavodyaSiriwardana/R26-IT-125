@@ -42,6 +42,17 @@ class LocationRequest(BaseModel):
     lng: float
     radius_m: float
 
+class EntryLocationRequest(BaseModel):
+    """Where the phone was when a diary entry was written."""
+    source_doc_id: str
+    lat: float
+    lng: float
+    accuracy_m: float | None = None
+    place_name: str = ""
+    place_types: list[str] = []
+    age_at_capture_hours: float | None = None
+    captured_at: str = ""
+
 class MoodResetRequest(BaseModel):
     entry_id: str = ""
     before_stress: float

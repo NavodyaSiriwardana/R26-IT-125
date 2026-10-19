@@ -78,14 +78,25 @@ class MultiSignalComparator:
         # Comparable only when the student stated a place AND the device
         # resolved one. "Unknown" means location is off or no saved place is
         # near, which says nothing about whether the claim is true.
-        location_checked = (
-            bool(self._norm(claimed_location))
-            and self._norm(actual_location) not in self.UNKNOWN_LOCATIONS
-        )
-        location_match = 1 if (
-            not location_checked
-            or self._norm(claimed_location) == self._norm(actual_location)
-        ) else 0
+        location_detail = sensor_data.get("location_check")
+        if isinstance(location_detail, dict):
+            # The place was worked out where the phone was when the entry was
+            # written (see location_check.py), or found too late to use.
+            location_checked = bool(location_detail.get("checked"))
+            location_match = 1 if (
+                not location_checked or location_detail.get("match")
+            ) else 0
+            if location_detail.get("label"):
+                actual_location = location_detail["label"]
+        else:
+            location_checked = (
+                bool(self._norm(claimed_location))
+                and self._norm(actual_location) not in self.UNKNOWN_LOCATIONS
+            )
+            location_match = 1 if (
+                not location_checked
+                or self._norm(claimed_location) == self._norm(actual_location)
+            ) else 0
 
         # Signal 3: Focus
         focus_quality_score = round(
@@ -163,6 +174,7 @@ class MultiSignalComparator:
             "actual_location": actual_location,
             "location_match": location_match,
             "location_checked": location_checked,
+            "location_detail": location_detail if isinstance(location_detail, dict) else None,
             "calendar_match": calendar_match,
             "calendar_checked": calendar_checked,
             "app_switches": app_switches,

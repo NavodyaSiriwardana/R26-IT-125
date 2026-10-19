@@ -19,17 +19,19 @@ class BiasDetectionOrchestrator:
         features = compared["features"]
         comparison = compared["comparison"]
 
-        # Step 2: Classify
-        classification = self.classifier.classify_with_rules(
-            features,
-            facial_emotion=sensor_data.get("facial_emotion"),
-            mood_after=diary_entry.get("mood_after") or "")
-
-        # Step 3: PAS Score
+        # Step 2: PAS Score (first, so the classifier can check its answer
+        # against it)
         pas_result = self.pas_calculator.calculate(
             features,
             diary_entry.get("claimed_duration_minutes", 0)
         )
+
+        # Step 3: Classify
+        classification = self.classifier.classify_with_rules(
+            features,
+            facial_emotion=sensor_data.get("facial_emotion"),
+            mood_after=diary_entry.get("mood_after") or "",
+            pas_score=pas_result["pas_score"])
 
         return {
             "primary_bias": classification["primary_bias"],

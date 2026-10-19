@@ -32,7 +32,7 @@ def _create_embedding_model():
         try:
             model = SentenceTransformer(
                 EMBEDDING_MODEL_NAME,
-                local_files_only=True,
+                local_files_only=False,
             )
         except OSError:
             standard_cache = Path.home() / ".cache" / "huggingface" / "hub"
@@ -41,7 +41,7 @@ def _create_embedding_model():
             model = SentenceTransformer(
                 EMBEDDING_MODEL_NAME,
                 cache_folder=str(standard_cache),
-                local_files_only=True,
+                local_files_only=False,
             )
     except Exception as error:
         logger.exception(

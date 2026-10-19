@@ -13,6 +13,8 @@ import 'package:frontend/components/temporal_causal_patterns/screens/new_entry_s
 import 'package:frontend/components/self_bias_identification/screens/profile_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/bias_history_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/facial_capture_screen.dart';
+import 'package:frontend/components/self_bias_identification/widgets/reality_cards.dart';
+import 'package:frontend/components/self_bias_identification/services/entry_location_capture.dart';
 import 'package:frontend/components/self_bias_identification/screens/my_locations_screen.dart';
 import 'package:frontend/components/self_bias_identification/services/location_service.dart';
 import 'package:frontend/components/self_bias_identification/services/sensor_data_service.dart';
@@ -50,7 +52,6 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Color _green = Color(0xFF35E47B);
 
   static const Color _cyan = Color(0xFF55CFE0);
-  static const Color _violet = Color(0xFF8B7BFF);
 
   static const Color _orange = Color(0xFFF4B653);
   static const Color _red = Color(0xFFFF6977);
@@ -82,10 +83,6 @@ class _HomeScreenState extends State<HomeScreen> {
   int _appSwitches = 0;
   int _socialMedia = 0;
   bool _isStudyCategory = true;
-  String _claimedLocation = '';
-  String _actualLocation = '';
-  String _moodBefore = '';
-  String _moodAfter = '';
   String _reflectionText = '';
   double _weeklyAvg = 0;
   List<Map<String, dynamic>> _recentEntries = [];
@@ -139,6 +136,9 @@ class _HomeScreenState extends State<HomeScreen> {
     ProfilePhotoService.load();
     ProfileNameService.load();
     _loadData();
+    // Right after a diary entry is written, remember where the phone is so the
+    // claimed place can be checked later. Never blocks or shows anything.
+    EntryLocationCapture.maybeCapture(AppState.userId);
     // Sequenced (not parallel) so none of these setup dialogs ever stack
     // on top of each other on a first launch.
     _checkUsageAccessSetup()
@@ -506,10 +506,6 @@ class _HomeScreenState extends State<HomeScreen> {
             _appSwitches = _asInt(comparison['app_switches']);
             _socialMedia = _asInt(comparison['social_media_minutes']);
             _isStudyCategory = comparison['is_study_category'] as bool? ?? true;
-            _claimedLocation = comparison['claimed_location'] ?? '';
-            _actualLocation = comparison['actual_location'] ?? '';
-            _moodBefore = comparison['mood_before'] ?? '';
-            _moodAfter = comparison['mood_after'] ?? '';
             _reflectionText = latest['reflection_text'] ?? '';
             _weeklyAvg = total / history.length;
             _recentEntries = history
@@ -1584,62 +1580,20 @@ class _HomeScreenState extends State<HomeScreen> {
   // ================================================================
 
   Widget _buildRealityCard() {
-    return TiltCard(
-      borderRadius: BorderRadius.circular(23),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(23),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(23),
-          onTap: _latestEntry == null ? null : () => _openLatestAnalysis(),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: _glassDecoration(radius: 23),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Reality check',
-                  style: GoogleFonts.outfit(
-                    color: _textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildCompareRow(
-                  label: 'Location',
-                  icon: Icons.place_rounded,
-                  accent: _cyan,
-                  claimed: _claimedLocation,
-                  actual: _actualLocation,
-                  // "Unknown" means it could not be checked, not that it differs.
-                  unchecked: _isUnknown(_actualLocation),
-                ),
-                const SizedBox(height: 12),
-                _buildCompareRow(
-                  label: 'Study duration',
-                  icon: Icons.timer_rounded,
-                  accent: _violet,
-                  claimed: '$_claimedDuration min',
-                  actual: '$_verifiedEdu min',
-                ),
-                const SizedBox(height: 12),
-                _buildCompareRow(
-                  label: 'Mood shift',
-                  icon: Icons.mood_rounded,
-                  accent: _orange,
-                  claimed: _moodBefore,
-                  actual: _moodAfter,
-                  unchecked: _isUnknown(_moodAfter),
-                ),
-                _tapHintRow(),
-              ],
-            ),
-          ),
+    final comparison = _latestEntry?['comparison'];
+    if (comparison is! Map) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: _glassDecoration(radius: 23),
+        child: const Text(
+          'Analyze a diary entry to see how what you wrote compares with your phone.',
+          style: TextStyle(color: _textSecondary, fontSize: 14, height: 1.5),
         ),
-      ),
+      );
+    }
+    return RealityCardsSection(
+      comparison: Map<String, dynamic>.from(comparison),
     );
   }
 
@@ -1675,142 +1629,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  static bool _isUnknown(String v) =>
-      v.trim().isEmpty || v.trim().toLowerCase() == 'unknown';
-
-  /// One comparison as a plain dark card with white bold text. Colour is kept
-  /// to small pure marks: the icon, one outline on the verified side, and the
-  /// verdict chip. Nothing is tinted or spread.
-  Widget _buildCompareRow({
-    required String label,
-    required IconData icon,
-    required Color accent,
-    required String claimed,
-    required String actual,
-    bool unchecked = false,
-  }) {
-    final bool matches = !unchecked && claimed.toLowerCase() == actual.toLowerCase();
-    final Color verdict = unchecked ? _orange : (matches ? _green : _red);
-    final String verdictText =
-        unchecked ? 'Not checked' : (matches ? 'Matches' : 'Differs');
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF080C12),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF151C27),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, size: 17, color: accent),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: verdict,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  verdictText,
-                  style: const TextStyle(
-                    color: Color(0xFF080C12),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _compareValue(
-                  title: 'CLAIMED',
-                  value: claimed,
-                  outline: Colors.white.withValues(alpha: 0.14),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 9),
-                child: Text('→', style: TextStyle(color: Colors.white54, fontSize: 20)),
-              ),
-              Expanded(
-                child: _compareValue(
-                  title: 'VERIFIED',
-                  value: actual,
-                  outline: verdict,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _compareValue({
-    required String title,
-    required String value,
-    required Color outline,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-      decoration: BoxDecoration(
-        color: const Color(0xFF151C27),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: outline, width: 1.4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white60,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.6,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value.isEmpty ? 'Unknown' : value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.outfit(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
     );
   }
 

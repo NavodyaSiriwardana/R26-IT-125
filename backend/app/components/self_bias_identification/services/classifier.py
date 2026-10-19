@@ -39,6 +39,12 @@ FEATURE_LABELS = {
 }
 
 
+# A bias label the model is not sure about is not shown against a score that
+# says the claim and the evidence agree. See classify_with_rules.
+LOW_CONFIDENCE = 0.6
+ALIGNED_PAS = 85
+
+
 class BiasClassifier:
 
     def __init__(self):
@@ -53,7 +59,7 @@ class BiasClassifier:
         )
         print("Bias classifier loaded!")
 
-    def classify(self, features: dict, exclude=()) -> dict:
+    def classify(self, features: dict, exclude=(), force=None) -> dict:
         """The model's verdict. [exclude] lists bias types that must not be
         chosen (see classify_with_rules); the best of the rest is used instead
         and the confidence is re-scaled over what is left, so it still reads
@@ -75,6 +81,8 @@ class BiasClassifier:
         if not allowed:
             allowed = list(range(len(classes)))
         prediction = max(allowed, key=lambda i: probabilities[i])
+        if force in classes and classes.index(force) in allowed:
+            prediction = classes.index(force)
         mass = float(sum(probabilities[i] for i in allowed)) or 1.0
         confidence = float(probabilities[prediction]) / mass
 
@@ -112,7 +120,8 @@ class BiasClassifier:
 
     def classify_with_rules(self, features: dict,
                              facial_emotion: dict = None,
-                             mood_after: str = "") -> dict:
+                             mood_after: str = "",
+                             pas_score: int = None) -> dict:
         # Step 1: XGBoost primary
         primary = self.classify(features)
 
@@ -129,6 +138,31 @@ class BiasClassifier:
                 "Stress underestimation was ruled out: no stress was hidden "
                 "(the student's own report matches, or there was no scan)."
             )
+
+        # A bias label the model is unsure about (confidence below
+        # LOW_CONFIDENCE) while the alignment score says the claim and the
+        # evidence agree (PAS at or above ALIGNED_PAS) contradicts itself. This
+        # happens for borderline entries the model never saw in training, such
+        # as a heavy phone user who really studied. The entry is then treated
+        # as accurate. The model's own probabilities stay in
+        # `all_probabilities` and its first choice in `model_first_choice`.
+        # (On the model's held-out data this rule never fires, so it only
+        # acts on entries the model has no examples for.)
+        if (pas_score is not None
+                and pas_score >= ALIGNED_PAS
+                and primary["bias_type"] != "accurate_perception"
+                and primary["confidence"] < LOW_CONFIDENCE):
+            first_choice = primary["bias_type"]
+            first_confidence = primary["confidence"]
+            primary = self.classify(
+                features, exclude=(first_choice,), force="accurate_perception"
+            )
+            primary["adjusted"] = (
+                f"The model was not sure about {first_choice.replace('_', ' ')} "
+                f"({round(first_confidence * 100)}%), and the alignment score is "
+                f"high ({pas_score}), so the entry is treated as accurate."
+            )
+            primary["model_first_choice"] = first_choice
 
         # Step 2: Rule-based additional indicators. Each rule fires only when
         # its signal was actually verified (see comparator *_checked flags),

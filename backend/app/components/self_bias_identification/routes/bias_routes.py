@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
-from app.components.self_bias_identification.schemas.request import BiasAnalysisRequest, ConsentRequest, LocationRequest, MoodResetRequest
+from app.components.self_bias_identification.schemas.request import BiasAnalysisRequest, ConsentRequest, EntryLocationRequest, LocationRequest, MoodResetRequest
 from app.components.self_bias_identification.services.privacy import strip_face_images
 from app.components.self_bias_identification.services.mood_support import MoodSupport
+from app.components.self_bias_identification.services import location_check
 from app.components.self_bias_identification.services.orchestrator import BiasDetectionOrchestrator
 from app.components.self_bias_identification.services.reflection_bot import ReflectionBot
 from app.components.self_bias_identification.services.firebase_service import FirebaseService
@@ -105,7 +106,44 @@ async def diary_status(user_id: str):
     """A quick look at the latest diary entry, so the app knows before it starts
     whether an analysis will happen or only a face check is possible."""
     st = _diary_state(user_id)
-    return {"state": st["state"], "entry_age_hours": st["age"]}
+    doc = st["doc"] or {}
+    return {
+        "state": st["state"],
+        "entry_age_hours": st["age"],
+        "source_doc_id": doc.get("_doc_id", ""),
+        # The app captures the phone's position only while this is true.
+        "location_capture_open": (
+            st["state"] == "new"
+            and st["age"] is not None
+            and st["age"] <= location_check.LOCATION_WINDOW_HOURS
+        ),
+    }
+
+
+@router.post("/entry-location/{user_id}")
+async def save_entry_location(user_id: str, request: EntryLocationRequest):
+    """Where the phone was right after a diary entry was written. Used later
+    to check the place the student claimed, with nothing saved by hand."""
+    data = request.model_dump()
+    data["captured_at"] = data["captured_at"] or datetime.now(timezone.utc).isoformat()
+    saved = firebase.save_entry_location(user_id, request.source_doc_id, data)
+    return {"status": "success" if saved else "error"}
+
+
+def _location_check_for(user_id: str, diary_entry: dict, age) -> dict | None:
+    """The location result for an entry, or None to keep the old behaviour
+    (the live position read while analysing)."""
+    claimed = diary_entry.get("claimed_location")
+    evidence = firebase.get_entry_location(user_id, diary_entry.get("source_doc_id", ""))
+    if evidence:
+        return location_check.evaluate(
+            claimed, evidence, firebase.get_user_locations(user_id)
+        )
+    if age is not None and age > location_check.LOCATION_WINDOW_HOURS:
+        # No capture, and "where the phone is now" says nothing about where the
+        # activity was this long ago.
+        return location_check.evaluate(claimed, {"age_at_capture_hours": age})
+    return None
 
 
 @router.post("/analyze-from-diary/{user_id}")
@@ -135,6 +173,9 @@ async def analyze_from_shared_diary(user_id: str, request: dict):
     diary_entry = map_leader_entry(leader_doc)
     sensor_data = request.get("sensor_data") or {}
     sensor_data["facial_emotion"] = strip_face_images(sensor_data.get("facial_emotion"))
+    checked_location = _location_check_for(user_id, diary_entry, age)
+    if checked_location is not None:
+        sensor_data["location_check"] = checked_location
     response = _run_analysis(diary_entry, sensor_data)
     response["entry_age_hours"] = age
     response["stale_entry"] = age is not None and age > STALE_ENTRY_HOURS

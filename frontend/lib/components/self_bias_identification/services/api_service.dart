@@ -78,6 +78,40 @@ class ApiService {
     }
   }
 
+  /// The server's full answer about the latest diary entry (state, age, the
+  /// entry id and whether the phone's position may still be captured). Null
+  /// when it cannot be read.
+  static Future<Map<String, dynamic>?> diaryStatus(String userId) async {
+    try {
+      final response = await ApiClient.get(
+        Uri.parse('$baseUrl/api/bias/diary-status/$userId'),
+      );
+      if (response.statusCode != 200) return null;
+      final body = jsonDecode(response.body);
+      return body is Map ? Map<String, dynamic>.from(body) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Sends where the phone was right after a diary entry was written.
+  static Future<bool> saveEntryLocation(
+    String userId,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = await ApiClient.post(
+        Uri.parse('$baseUrl/api/bias/entry-location/$userId'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
+      return response.statusCode == 200 &&
+          jsonDecode(response.body)['status'] == 'success';
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// A camera scan with no diary entry to compare against. Returns the
   /// Mood Support for the face reading alone, or null when no usable face was
   /// found (nothing is stored then). Throws on a network or server problem.

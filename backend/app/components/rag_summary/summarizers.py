@@ -148,9 +148,9 @@ def _get_summarizer_pipeline():
                     "rag_cpu_thread_configuration_skipped role=summary_generator"
                 )
 
-            tokenizer_kwargs: Dict[str, Any] = {"local_files_only": True}
+            tokenizer_kwargs: Dict[str, Any] = {"local_files_only": False}
             model_kwargs: Dict[str, Any] = {
-                "local_files_only": True,
+                "local_files_only": False,
                 "low_cpu_mem_usage": True,
             }
 
