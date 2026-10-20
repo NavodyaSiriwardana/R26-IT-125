@@ -10,6 +10,11 @@ import 'package:frontend/components/self_bias_identification/screens/analyzing_s
 import 'package:frontend/components/self_bias_identification/services/api_service.dart';
 import 'package:frontend/components/self_bias_identification/widgets/gradient_ring_painter.dart';
 import 'package:frontend/components/self_bias_identification/widgets/mood_heatmap.dart';
+import 'package:frontend/components/self_bias_identification/widgets/mood_bulb_popup.dart';
+import 'package:frontend/components/self_bias_identification/widgets/mood_recommendations_card.dart';
+import 'package:frontend/components/self_bias_identification/widgets/scan_mood_card.dart';
+import 'package:frontend/components/self_bias_identification/screens/mood_reset_screen.dart';
+import 'package:frontend/components/self_bias_identification/services/mood_light_data.dart';
 import 'package:frontend/components/self_bias_identification/services/history_data.dart';
 import 'package:frontend/components/self_bias_identification/services/mood_heatmap.dart';
 import 'package:frontend/components/self_bias_identification/services/entry_time.dart';
@@ -292,6 +297,12 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
                     const SizedBox(height: 18),
                     _buildStressCard(),
                     const SizedBox(height: 14),
+                    _buildScanMoodCard(),
+                    if (_moodLevel != MoodLightLevel.calm) ...[
+                      const SizedBox(height: 14),
+                      MoodRecommendationsCard(level: _moodLevel),
+                    ],
+                    const SizedBox(height: 14),
                     _buildExpressionCard(),
                     const SizedBox(height: 14),
                     MoodHeatmapCard(heatmap: _heatmap),
@@ -526,7 +537,9 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
             : hasImage
                 ? 'Photo captured'
                 : 'Align your face in the frame';
-    final ringColor = _isAnalyzing ? cyan : green;
+    final ringColor = _isAnalyzing
+        ? cyan
+        : (success ? moodLightInfo(_moodLevel).color : green);
     const stageHeight = 276.0;
 
     return Column(
@@ -586,6 +599,13 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
                         child: Container(height: 2, color: cyan),
                       );
                     },
+                  ),
+                if (success)
+                  Positioned.fill(
+                    child: MoodBulbPopup(
+                      key: ValueKey(identityHashCode(_result)),
+                      level: _moodLevel,
+                    ),
                   ),
                 Positioned(
                   bottom: 12,
@@ -752,6 +772,36 @@ class _FacialCaptureScreenState extends State<FacialCaptureScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// The light for the scan on screen: the same thresholds the backend uses.
+  MoodLightLevel get _moodLevel {
+    final r = _result;
+    if (r == null || r['status'] != 'success') return MoodLightLevel.calm;
+    final stress = ((r['stress_indicator'] ?? 0) as num).toDouble();
+    final scores = r['emotion_scores'];
+    final sad = scores is Map ? ((scores['sad'] ?? 0) as num).toDouble() : 0.0;
+    return moodLightLevel(stress: stress, sad: sad);
+  }
+
+  Widget _buildScanMoodCard() {
+    final stress = ((_result!['stress_indicator'] ?? 0) as num).toDouble();
+    final level = _moodLevel;
+    return ScanMoodCard(
+      level: level,
+      stress: stress,
+      onReset: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MoodResetScreen(
+            entryId: '',
+            beforeStress: stress,
+            beforeMoodLabel: moodLightInfo(level).label,
+            breathing: Map<String, dynamic>.from(defaultBreathing),
+          ),
+        ),
       ),
     );
   }
