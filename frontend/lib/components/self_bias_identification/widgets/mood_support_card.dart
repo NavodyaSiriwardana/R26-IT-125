@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:frontend/components/self_bias_identification/screens/mood_reset_screen.dart';
 import 'package:frontend/components/self_bias_identification/widgets/mood_palette.dart';
+import 'package:frontend/components/self_bias_identification/services/mood_light_data.dart';
 
 /// "Mood Support" card shown on the result screen and on the
 /// Recommendations screen. Renders the backend's `mood_support` block:
@@ -126,6 +127,9 @@ class MoodSupportCard extends StatelessWidget {
           if (needsReset && _hasCamera) ...[
             const SizedBox(height: 16),
             _resetButton(context, gradient, color, label, stress ?? 0),
+          ] else if (_hasCamera) ...[
+            const SizedBox(height: 16),
+            _calmResetLink(context, color, label, stress ?? 0),
           ] else if (needsReset) ...[
             const SizedBox(height: 4),
             Text(
@@ -405,6 +409,49 @@ class MoodSupportCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// A quiet, optional reset for a calm mood: the reset is always available.
+  Widget _calmResetLink(
+    BuildContext context,
+    Color color,
+    String moodLabel,
+    double stress,
+  ) {
+    return GestureDetector(
+      key: const Key('calm-reset-link'),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MoodResetScreen(
+            entryId: entryId,
+            beforeStress: stress,
+            beforeMoodLabel: moodLabel,
+            breathing: Map<String, dynamic>.from(
+              moodSupport['breathing'] as Map? ?? defaultBreathing,
+            ),
+          ),
+        ),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: moodLightGreen.withValues(alpha: 0.5)),
+        ),
+        child: Center(
+          child: Text(
+            'Try a 2-minute breathing reset',
+            style: GoogleFonts.outfit(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: moodLightGreen,
+            ),
+          ),
+        ),
       ),
     );
   }

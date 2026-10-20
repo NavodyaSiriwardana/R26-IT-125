@@ -17,9 +17,11 @@ import 'package:frontend/components/self_bias_identification/widgets/app_toast.d
 import 'package:frontend/components/self_bias_identification/screens/bias_history_screen.dart';
 import 'package:frontend/components/self_bias_identification/screens/facial_history_screen.dart';
 import 'package:frontend/components/self_bias_identification/services/history_data.dart';
+import 'package:frontend/components/self_bias_identification/services/mood_alert_feedback.dart';
 import 'package:frontend/components/self_bias_identification/services/profile_name_service.dart';
 import 'package:frontend/components/self_bias_identification/services/profile_photo_service.dart';
 import 'package:frontend/components/self_bias_identification/widgets/profile_avatar.dart';
+import 'package:frontend/components/self_bias_identification/widgets/alert_settings_rows.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,6 +32,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _calendarVerificationEnabled = false;
+  bool _moodSound = true;
   bool _studyMode = false;
   bool _hasConsent = false;
   int? _entries;
@@ -40,6 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _loadCalendarSetting();
+    _loadMoodSound();
     _loadResearchState();
     ProfilePhotoService.load();
     ProfileNameService.load();
@@ -382,6 +386,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _loadMoodSound() async {
+    final on = await MoodAlertFeedback.soundEnabled();
+    if (mounted) setState(() => _moodSound = on);
+  }
+
+  Future<void> _onMoodSoundToggle(bool value) async {
+    setState(() => _moodSound = value);
+    await MoodAlertFeedback.setSoundEnabled(value);
+  }
+
   Future<void> _loadCalendarSetting() async {
     final enabled = await CalendarSettingsService.isEnabled();
     if (mounted) setState(() => _calendarVerificationEnabled = enabled);
@@ -548,7 +562,64 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 ),
+                _divider(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFFEF6B6B).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.volume_up_outlined,
+                            color: Color(0xFFEF6B6B), size: 20),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Stress alert sound',
+                              style: GoogleFonts.outfit(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'A soft sound when a scan shows stress. '
+                              'Follows your phone volume and silent mode.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white.withValues(alpha: 0.55),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        key: const Key('mood-sound-switch'),
+                        value: _moodSound,
+                        onChanged: _onMoodSoundToggle,
+                        activeThumbColor: const Color(0xFF7B6EFF),
+                      ),
+                    ],
+                  ),
+                ),
               ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Alerts
+            _modernMenuCard(
+              title: "Alerts",
+              children: const [AlertSettingsRows()],
             ),
 
             const SizedBox(height: 16),

@@ -31,6 +31,14 @@ import 'package:frontend/components/self_bias_identification/services/profile_ph
 import 'package:frontend/components/self_bias_identification/services/profile_name_service.dart';
 import 'package:frontend/components/self_bias_identification/services/recommendations_seen.dart';
 import 'package:frontend/components/self_bias_identification/services/sign_in_check.dart';
+import 'package:frontend/components/self_bias_identification/services/alert_rules.dart';
+import 'package:frontend/components/self_bias_identification/services/alert_service.dart';
+import 'package:frontend/components/self_bias_identification/screens/alert_detail_screen.dart';
+import 'package:frontend/components/self_bias_identification/widgets/alert_card.dart';
+import 'package:frontend/components/self_bias_identification/services/progress_rules.dart';
+import 'package:frontend/components/self_bias_identification/services/progress_service.dart';
+import 'package:frontend/components/self_bias_identification/screens/progress_screen.dart';
+import 'package:frontend/components/self_bias_identification/widgets/progress_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -96,6 +104,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// A new result whose recommendations have not been opened yet.
   bool _newRecommendations = false;
+
+  /// Critical alerts that are open.
+  List<CriticalAlert> _alerts = [];
+
+  /// The student against their own first week, for the last card.
+  ProgressSummary? _progress;
+
+  Future<void> _loadAlerts() async {
+    final alerts = await AlertService.check();
+    final progress = await ProgressService.load();
+    if (!mounted) return;
+    setState(() {
+      _alerts = alerts;
+      _progress = progress;
+    });
+  }
+
+  Future<void> _openAlert(CriticalAlert alert) async {
+    final closed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AlertDetailScreen(alert: alert)),
+    );
+    if (closed == true) _loadAlerts();
+  }
 
   @override
   void initState() {
@@ -522,6 +554,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+        _loadAlerts();
       }
     }
   }
@@ -695,6 +728,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.fromLTRB(18, 18, 18, 135),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
+                        // CRITICAL ALERT, or all clear
+                        if (_alerts.isNotEmpty) ...[
+                          AlertCard(
+                            alert: _alerts.first,
+                            onOpen: () => _openAlert(_alerts.first),
+                          ),
+                          const SizedBox(height: 18),
+                        ],
+
                         // SCORE
                         _animatedSection(
                           delay: 0,
@@ -914,6 +956,21 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                         ),
+
+                        // MY PRODUCTIVITY PROGRESS: the last card
+                        if (_progress != null && _progress!.hasAnyEntry) ...[
+                          const SizedBox(height: 28),
+                          ProgressCard(
+                            summary: _progress!,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ProgressScreen(summary: _progress!),
+                              ),
+                            ),
+                          ),
+                        ],
                       ]),
                     ),
                   ),
